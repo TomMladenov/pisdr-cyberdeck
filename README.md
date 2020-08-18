@@ -8,3 +8,7 @@ wall as a range of monitoring and BITS (Built in self test) functions.
 ## Hardware
 
 The software in this repository is designed to be used with the Raspberry Pi Official 7" Touch Display in landscape mode.
+
+## Requirements
+
+TBD
