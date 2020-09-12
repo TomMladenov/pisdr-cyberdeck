@@ -1,0 +1,4 @@
+PyQt5
+rpi-backlight
+mgrs
+adafruit-circuitpython-ina219
