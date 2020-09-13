@@ -19,15 +19,20 @@ import datetime
 import collections
 import logging
 import subprocess
-from rpi_backlight import Backlight
-import RPi.GPIO as GPIO
-import re
-import board
-from adafruit_ina219 import ADCResolution, BusVoltageRange, INA219, Mode
-from enum import Enum
-from configuration import *
 import gpsd
 import mgrs
+import re
+from enum import Enum
+
+import board
+from rpi_backlight import Backlight
+import RPi.GPIO as GPIO
+from adafruit_ina219 import ADCResolution, BusVoltageRange, INA219, Mode
+
+from datapool import Datapool
+from platform import Platform
+from configuration import *
+
 
 upper = 'ABCDEFGHIJKLMNOPQRSTUVWX'
 lower = 'abcdefghijklmnopqrstuvwx'
@@ -73,92 +78,6 @@ class State(Enum):
 	CONNECTED = 1
 	DISCONNECTED = 2
 	NO_LINK = 3
-
-class Datapool():
-
-
-	f_temp_dcdc = 0.0
-	b_temp_dcdc_err = False
-	b_temp_dcdc_warn = False
-
-	f_temp_obc = 0.0
-	b_temp_obc_err = False
-	b_temp_obc_warn = False
-
-	f_temp_obc_core = 0.0
-	b_temp_obc_core_err = False
-	b_temp_obc_core_warn = False
-
-	f_temp_batt = 0.0
-	b_temp_batt_err = False
-	b_temp_batt_warn = False
-
-	f_voltage_obc = 1.0
-	f_current_obc = 1.0
-	f_power_obc = 1.0
-
-	f_voltage_mon = 0.0
-	f_current_mon = 0.0
-	f_power_mon = 0.0
-
-	f_power_tot = 0.0
-
-	#gps data
-	f_gps_lat = 0.0
-	f_gps_lon = 0.0
-	f_gps_alt = 0.0
-	s_gps_time = ''
-	l_gps_sats = []
-	i_gps_mode = 0
-	i_gps_numsats = 0
-	s_gps_mgrs = ''
-	s_gps_path = ''
-	s_gps_speed = 0
-	s_gps_driver = ''
-	s_gps_locator = ''
-
-	#process states
-	b_status_nav = False
-	b_status_gqrx = False
-	b_status_key = False
-	b_status_ais = False
-	b_status_acars = False
-	b_status_vdl2 = False
-	b_status_adsb = False
-	b_status_dump1090 = False
-	b_status_speakertest = False
-	b_status_gpsd = False
-	b_status_opencpn = False
-	b_status_fldigi = False
-	b_status_tcpserver_RF1 = False
-	b_status_tcpserver_RF2 = False
-
-	#power states
-	b_audio_enabled = False
-	b_imu_enabled = False
-	b_gps_enabled = False
-	b_usb_enabled = False
-
-	#RF1
-	e_RF1_status = ''
-	i_RF1_index = 100
-
-	#RF2
-	e_RF2_status = ''
-	i_RF2_index = 100
-
-	#comms
-	b_eth0_status = ''
-	s_eth0_ip = ''
-	b_wlan0_status = ''
-	s_wlan0_ip = ''
-
-	#obc
-	s_obc_uptime = ''
-
-	def __init__(self, parent=None):
-		pass
-
 
 class Statusbar(QDialog):
 
@@ -952,19 +871,21 @@ class AlarmIndicator(QThread):
 
 	def __init__(self, parent=None):
 		QThread.__init__(self)
-		mainLogger.info('[ALARM] __init__() called')
+
+		self.logger = logging.getLogger('main_logger')
+		self.logger.info('[ALARM] __init__() called')
 		GPIO.output(ALARM_LED_PIN, False)
 
 	def enable(self):
 		self.alarm_active = True
-		mainLogger.info('[ALARM] enable() called')
+		self.logger.info('[ALARM] enable() called')
 
 	def disable(self):
 		self.alarm_active = False
 		if GPIO.input(ALARM_LED_PIN):
 			GPIO.output(ALARM_LED_PIN, False)
 			self.alarmHighSignal.emit(False)
-		mainLogger.info('[ALARM] disable() called')
+		self.logger.info('[ALARM] disable() called')
 
 	def run(self):
 		while True:
@@ -1000,7 +921,8 @@ class TempPowerPoller(Thread):
 
 	def __init__(self, parent=None):
 		Thread.__init__(self)
-		mainLogger.info('[TEMP/PWR] __init__() called')
+		self.logger = logging.getLogger('main_logger')
+		self.logger.info('[TEMP/PWR] __init__() called')
 		self.parent = parent
 
 		if INA219_CH0_ENABLE:
@@ -1008,14 +930,14 @@ class TempPowerPoller(Thread):
 			self.ina219_ch0.bus_adc_resolution = ADCResolution.ADCRES_12BIT_32S
 			self.ina219_ch0.shunt_adc_resolution = ADCResolution.ADCRES_12BIT_32S
 			self.ina219_ch0.bus_voltage_range = BusVoltageRange.RANGE_16V
-			mainLogger.info('[TEMP/PWR] enable_ina219_ch0=True, INA219 on I2C addr {ADDR}, ADCRES_12BIT_32S, RANGE_16V'.format(ADDR=INA219_ADDR_CH0))
+			self.logger.info('[TEMP/PWR] enable_ina219_ch0=True, INA219 on I2C addr {ADDR}, ADCRES_12BIT_32S, RANGE_16V'.format(ADDR=INA219_ADDR_CH0))
 
 		if INA219_CH1_ENABLE:
 			self.ina219_ch1 = INA219(I2C_BUS, addr=int(INA219_ADDR_CH1, 16))
 			self.ina219_ch1.bus_adc_resolution = ADCResolution.ADCRES_12BIT_32S
 			self.ina219_ch1.shunt_adc_resolution = ADCResolution.ADCRES_12BIT_32S
 			self.ina219_ch1.bus_voltage_range = BusVoltageRange.RANGE_16V
-			mainLogger.info('[TEMP/PWR] enable_ina219_ch1=True, INA219 on I2C addr {ADDR} ADCRES_12BIT_32S, RANGE_16V'.format(ADDR=INA219_ADDR_CH1))
+			self.logger.info('[TEMP/PWR] enable_ina219_ch1=True, INA219 on I2C addr {ADDR} ADCRES_12BIT_32S, RANGE_16V'.format(ADDR=INA219_ADDR_CH1))
 
 	def pollTemperatures(self):
 		if ENABLE_ONEWIRE:
@@ -1094,17 +1016,15 @@ class TempPowerPoller(Thread):
 			self.parent.datapool.f_voltage_obc = self.ina219_ch0.bus_voltage  # voltage on V- (load side)
 			self.parent.datapool.f_current_obc = self.ina219_ch0.current/1000.0 # current in mA
 			self.parent.datapool.f_power_obc = self.parent.datapool.f_voltage_obc * self.parent.datapool.f_current_obc
-			mainLogger.info('[TEMP/PWR] pollPower() called CH0: {POWER}W ({VOLT}V/{AMPS}A)'.format(POWER=round(self.parent.datapool.f_power_obc, 2), VOLT=round(self.parent.datapool.f_voltage_obc, 2), AMPS=round(self.parent.datapool.f_current_obc, 2)))
+			self.logger.info('[TEMP/PWR] pollPower() called CH0: {POWER}W ({VOLT}V/{AMPS}A)'.format(POWER=round(self.parent.datapool.f_power_obc, 2), VOLT=round(self.parent.datapool.f_voltage_obc, 2), AMPS=round(self.parent.datapool.f_current_obc, 2)))
 
 		if INA219_CH1_ENABLE:
 			self.parent.datapool.f_voltage_mon = self.ina219_ch1.bus_voltage  # voltage on V- (load side)
 			self.parent.datapool.f_current_mon = self.ina219_ch1.current/1000.0 # current in mA
 			self.parent.datapool.f_power_mon = self.parent.datapool.f_voltage_mon * self.parent.datapool.f_current_mon
-			mainLogger.info('[TEMP/PWR] pollPower() called CH1: {POWER}W ({VOLT}V/{AMPS}A)'.format(POWER=round(self.parent.datapool.f_power_mon, 2), VOLT=round(self.parent.datapool.f_voltage_mon, 2), AMPS=round(self.parent.datapool.f_current_mon, 2)))
+			self.logger.info('[TEMP/PWR] pollPower() called CH1: {POWER}W ({VOLT}V/{AMPS}A)'.format(POWER=round(self.parent.datapool.f_power_mon, 2), VOLT=round(self.parent.datapool.f_voltage_mon, 2), AMPS=round(self.parent.datapool.f_current_mon, 2)))
 
 		self.parent.datapool.f_power_tot = self.parent.datapool.f_power_mon + self.parent.datapool.f_power_obc
-
-
 
 	def run(self):
 		while True:
@@ -1120,7 +1040,8 @@ class Poller(QThread):
 
 	def __init__(self, parent=None):
 		QThread.__init__(self)
-		mainLogger.info('[POLLER] __init__() called')
+		self.logger = logging.getLogger('main_logger')
+		self.logger.info('[POLLER] __init__() called')
 		self.parent = parent
 
 	def pollGPS(self):
@@ -1312,14 +1233,15 @@ class GPS(Thread):
 
 	def __init__(self, parent, gpsd_ip, gpsd_port):
 		Thread.__init__(self)
-		mainLogger.info('Initiated GPS thread')
+		self.logger = logging.getLogger('main_logger')
+		self.logger.info('Initiated GPS thread')
 		self.parent = parent
 
 		self.m = mgrs.MGRS()
 
 		gpsd.connect()
 		self.connected = True
-		mainLogger.info('Connected to GPSD server at {HOST}:{PORT}'.format(HOST=gpsd_ip, PORT=gpsd_port))
+		self.logger.info('Connected to GPSD server at {HOST}:{PORT}'.format(HOST=gpsd_ip, PORT=gpsd_port))
 		time.sleep(3)
 		self.packet = gpsd.get_current()
 		devinfo = gpsd.device()
@@ -1354,434 +1276,13 @@ class GPS(Thread):
 
 				time.sleep(1)
 			except Exception as e:
-				mainLogger.error(e)
+				self.logger.error(e)
 				time.sleep(1)
 
 
 
-
-class Platform():
-
-	backlight = Backlight()
-
-	gps = None
-
-	current_volume = 0
-	muted = False
-
-	usb_lan_enabled = False
-	ip_address = None
-
-	dev = 0
-
-	def __init__(self, parent):
-		self.parent = parent
-		mainLogger.info('[PLATFORM] __init__() called')
-		self.ip_address = self.getIpAddress()
-
-		self.backlight.fade_duration = 0.2
-		self.current_volume, self.muted = self.getCurrentVolume()
-
-		try:
-			self.gps = GPS(self, 'localhost', 2947)
-			self.gps.start()
-		except Exception as e:
-			pass
-
-		if AUTOSTART_NAV:
-			self.stopApplications()
-			self.startNav()
-
-		if DISABLE_AUDIO_UPON_START:
-			self.disableAudio()
-
-		if DISABLE_USB_UPON_START:
-			self.disableUSB()
-
-	def stopApplications(self):
-		subprocess.run(["{PATH}/scripts/stop_all_applications.sh".format(PATH=path)], shell=True)
-
-	def reboot(self):
-		mainLogger.info('[PLATFORM] reboot() called, proceeding to "sudo reboot now"...'.format(PATH=path))
-		subprocess.run(["sudo reboot now"], shell=True)
-
-	def shutdown(self):
-		subprocess.run(["{PATH}/scripts/stop_all_applications.sh".format(PATH=path)], shell=True)
-		mainLogger.info('[PLATFORM] shutdown() called, ran script {PATH}/scripts/stop_all_applications.sh, proceeding to "sudo shutdown now"...'.format(PATH=path))
-		subprocess.run(["sudo shutdown now"], shell=True)
-
-	def takeScreenshot(self):
-		subprocess.run(["scrot -e 'mv $f /home/pi/Pictures/screenshots/'"], shell=True)
-		mainLogger.info('[PLATFORM] takeScreenshot() called, moved to /home/pi/Pictures/screenshots/')
-		return True
-
-	def startAcars(self, serno):
-		if serno == RF1_SER:
-			if self.parent.datapool.e_RF1_status == State.CONNECTED:
-				subprocess.run(["{PATH}/scripts/start_acars.sh {SERNO} {PPM}".format(PATH=path, SERNO=RF1_SER, PPM=RF1_PPM)], shell=True)
-				mainLogger.info('[PLATFORM] startAcars() called, run script {PATH}/scripts/start_acars.sh'.format(PATH=path))
-			else:
-				mainLogger.warning('[PLATFORM] startAcars() called, but RF1 unit does not have CONNECTED state')
-		elif serno == RF2_SER:
-			if self.parent.datapool.e_RF2_status == State.CONNECTED:
-				subprocess.run(["{PATH}/scripts/start_acars.sh {SERNO} {PPM}".format(PATH=path, SERNO=RF2_SER, PPM=RF2_PPM)], shell=True)
-				mainLogger.info('[PLATFORM] startAcars() called, run script {PATH}/scripts/start_vdl.sh'.format(PATH=path))
-			else:
-				mainLogger.warning('[PLATFORM] startAcars() called, but RF2 unit does not have CONNECTED state')
-		else:
-			mainLogger.error('[PLATFORM] startAcars() called, but supplied serial number invalid')
-
-	def stopAcars(self):
-		subprocess.run(["{PATH}/scripts/stop_acars.sh".format(PATH=path)], shell=True)
-		mainLogger.info('[PLATFORM] stopAcars() called, run script {PATH}/scripts/stop_acars.sh'.format(PATH=path))
-		self.RTLsleep()
-		return True
-
-	def startVdl2(self, serno):
-		if serno == RF1_SER:
-			if self.parent.datapool.e_RF1_status == State.CONNECTED:
-				subprocess.run(["{PATH}/scripts/start_vdl.sh {SERNO} {PPM}".format(PATH=path, SERNO=RF1_SER, PPM=RF1_PPM)], shell=True)
-				mainLogger.info('[PLATFORM] startVdl2() called, run script {PATH}/scripts/start_vdl.sh'.format(PATH=path))
-			else:
-				mainLogger.warning('[PLATFORM] startVdl2() called, but RF1 unit does not have CONNECTED state')
-		elif serno == RF2_SER:
-			if self.parent.datapool.e_RF2_status == State.CONNECTED:
-				subprocess.run(["{PATH}/scripts/start_vdl.sh {SERNO} {PPM}".format(PATH=path, SERNO=RF2_SER, PPM=RF2_PPM)], shell=True)
-				mainLogger.info('[PLATFORM] startVdl2() called, run script {PATH}/scripts/start_vdl.sh'.format(PATH=path))
-			else:
-				mainLogger.warning('[PLATFORM] startVdl2() called, but RF2 unit does not have CONNECTED state')
-		else:
-			mainLogger.error('[PLATFORM] startVdl2() called, but supplied serial number invalid')
-
-	def stopVdl2(self):
-		subprocess.run(["{PATH}/scripts/stop_vdl.sh".format(PATH=path)], shell=True)
-		mainLogger.info('[PLATFORM] stopVdl2() called, run script {PATH}/scripts/stop_vdl.sh'.format(PATH=path))
-		self.RTLsleep()
-		return True
-
-	def startAIS(self, serno):
-		if serno == RF1_SER:
-			if self.parent.datapool.e_RF1_status == State.CONNECTED:
-				subprocess.run(["{PATH}/scripts/start_ais.sh {INDEX} {PPM}".format(PATH=path, INDEX=self.parent.datapool.i_RF1_index, PPM=RF1_PPM)], shell=True)
-				mainLogger.info('[PLATFORM] startAIS() called, run script {PATH}/scripts/start_ais.sh'.format(PATH=path))
-			else:
-				mainLogger.warning('[PLATFORM] startAIS() called, but RF1 unit does not have CONNECTED state')
-		elif serno == RF2_SER:
-			if self.parent.datapool.e_RF2_status == State.CONNECTED:
-				subprocess.run(["{PATH}/scripts/start_ais.sh {INDEX} {PPM}".format(PATH=path, INDEX=self.parent.datapool.i_RF2_index, PPM=RF2_PPM)], shell=True)
-				mainLogger.info('[PLATFORM] startAIS() called, run script {PATH}/scripts/start_ais.sh'.format(PATH=path))
-			else:
-				mainLogger.warning('[PLATFORM] startAIS() called, but RF2 unit does not have CONNECTED state')
-		else:
-			mainLogger.error('[PLATFORM] startAIS() called, but supplied serial number invalid')
-
-	def stopAIS(self):
-		subprocess.run(["{PATH}/scripts/stop_ais.sh".format(PATH=path)], shell=True)
-		mainLogger.info('[PLATFORM] stopAIS() called, run script {PATH}/scripts/stop_ais.sh'.format(PATH=path))
-		return True
-
-	def startADSB(self, serno):
-		if serno == RF1_SER:
-			if self.parent.datapool.e_RF1_status == State.CONNECTED:
-				subprocess.run(["{PATH}/scripts/start_adsb.sh {SERNO} {PPM}".format(PATH=path, SERNO=RF1_SER, PPM=RF1_PPM)], shell=True)
-				mainLogger.info('[PLATFORM] startADSB() called, run script {PATH}/scripts/start_adsb.sh'.format(PATH=path))
-			else:
-				mainLogger.warning('[PLATFORM] startADSB() called, but RF1 unit does not have CONNECTED state')
-		elif serno == RF2_SER:
-			if self.parent.datapool.e_RF2_status == State.CONNECTED:
-				subprocess.run(["{PATH}/scripts/start_adsb.sh {SERNO} {PPM}".format(PATH=path, SERNO=RF2_SER, PPM=RF2_PPM)], shell=True)
-				mainLogger.info('[PLATFORM] startADSB() called, run script {PATH}/scripts/start_adsb.sh'.format(PATH=path))
-			else:
-				mainLogger.warning('[PLATFORM] startADSB() called, but RF2 unit does not have CONNECTED state')
-		else:
-			mainLogger.error('[PLATFORM] startADSB() called, but supplied serial number invalid')
-
-	def stopADSB(self):
-		subprocess.run(["{PATH}/scripts/stop_adsb.sh".format(PATH=path)], shell=True)
-		mainLogger.info('[PLATFORM] stopADSB() called, run script {PATH}/scripts/stop_adsb.sh'.format(PATH=path))
-		return True
-
-	def startGQRX(self, serno, mode):
-		if serno == RF1_SER:
-			if self.parent.datapool.e_RF1_status == State.CONNECTED:
-				if mode == 'vhf':
-					subprocess.run(["{PATH}/scripts/start_gqrx.sh {INDEX} {MODE}".format(PATH=path, INDEX=self.parent.datapool.i_RF1_index, MODE='vhf')], shell=True)
-					mainLogger.info('[PLATFORM] startGQRX() called, run script {PATH}/scripts/start_gqrx.sh'.format(PATH=path))
-				elif mode == 'hf':
-					subprocess.run(["{PATH}/scripts/start_gqrx.sh {INDEX} {MODE}".format(PATH=path, INDEX=self.parent.datapool.i_RF1_index, MODE='hf')], shell=True)
-					mainLogger.info('[PLATFORM] startGQRX() called, run script {PATH}/scripts/start_gqrx.sh'.format(PATH=path))
-				else:
-					mainLogger.warning('[PLATFORM] startGQRX() called, but passed mode invalid')
-			else:
-				mainLogger.warning('[PLATFORM] startGQRX() called, but RF1 unit does not have CONNECTED state')
-		elif serno == RF2_SER:
-			if self.parent.datapool.e_RF2_status == State.CONNECTED:
-				if mode == 'vhf':
-					subprocess.run(["{PATH}/scripts/start_gqrx.sh {INDEX} {MODE}".format(PATH=path, INDEX=self.parent.datapool.i_RF2_index, MODE='vhf')], shell=True)
-					mainLogger.info('[PLATFORM] startGQRX() called, run script {PATH}/scripts/start_gqrx.sh'.format(PATH=path))
-				elif mode == 'hf':
-					subprocess.run(["{PATH}/scripts/start_gqrx.sh {INDEX} {MODE}".format(PATH=path, INDEX=self.parent.datapool.i_RF2_index, MODE='hf')], shell=True)
-					mainLogger.info('[PLATFORM] startGQRX() called, run script {PATH}/scripts/start_gqrx.sh'.format(PATH=path))
-				else:
-					mainLogger.warning('[PLATFORM] startGQRX() called, but passed mode invalid')
-			else:
-				mainLogger.warning('[PLATFORM] startGQRX() called, but RF2 unit does not have CONNECTED state')
-		else:
-			mainLogger.error('[PLATFORM] startGQRX() called, but supplied serial number invalid')
-
-	def stopGQRX(self):
-		subprocess.run(["{PATH}/scripts/stop_gqrx.sh".format(PATH=path)], shell=True)
-		mainLogger.info('[PLATFORM] stopGQRX() called, run script {PATH}/scripts/stop_gqrx.sh'.format(PATH=path))
-		return True
-
-	def startGQRX_noconfig(self):
-		subprocess.run(["{PATH}/scripts/start_gqrx_noconfig.sh".format(PATH=path)], shell=True)
-		mainLogger.info('[PLATFORM] startGQRX_noconfig() called, run script {PATH}/scripts/start_gqrx_noconfig.sh'.format(PATH=path))
-		return True
-
-	def getCurrentVolume(self):
-		output = subprocess.check_output(['amixer', 'get', 'Master'])
-		lines_full = output.decode('utf-8')
-		if '[on]' in lines_full:
-			muted = False
-		elif '[off]' in lines_full:
-			muted = True
-		lines = output.decode('utf-8').split('\n')
-		line = lines[4]
-		ints = re.findall(r'\d+', line)
-		master = ints[1]
-		return master, muted
-
-	def getCurrentBacklight(self):
-		current_brightness = self.backlight.brightness
-		return current_brightness
-
-	def stopNav(self):
-		subprocess.run(["{PATH}/scripts/stop_xastir.sh".format(PATH=path)], shell=True)
-		mainLogger.info('[PLATFORM] stopNav() called, run script {PATH}/scripts/stop_xastir.sh'.format(PATH=path))
-
-	def startNav(self):
-		subprocess.run(["{PATH}/scripts/start_xastir.sh".format(PATH=path)], shell=True)
-		mainLogger.info('[PLATFORM] startNav() called, run script {PATH}/scripts/start_xastir.sh'.format(PATH=path))
-
-	def startDigi(self):
-		subprocess.run(["{PATH}/scripts/start_fldigi.sh".format(PATH=path)], shell=True)
-		mainLogger.info('[PLATFORM] startDigi() called, run script {PATH}/scripts/start_fldigi.sh'.format(PATH=path))
-
-	def stopDigi(self):
-		subprocess.run(["{PATH}/scripts/stop_fldigi.sh".format(PATH=path)], shell=True)
-		mainLogger.info('[PLATFORM] stopDigi() called, run script {PATH}/scripts/stop_fldigi.sh'.format(PATH=path))
-
-	def startKeyboard(self):
-		subprocess.run(["{PATH}/scripts/start_keyboard.sh".format(PATH=path)], shell=True)
-		mainLogger.info('[PLATFORM] startKeyboard() called, run script {PATH}/scripts/start_keyboard.sh'.format(PATH=path))
-
-	def startKrono(self):
-		subprocess.run(["{PATH}/scripts/start_chrono.sh".format(PATH=path)], shell=True)
-		mainLogger.info('[PLATFORM] startKrono() called, run script {PATH}/scripts/start_chrono.sh'.format(PATH=path))
-
-	def mute(self):
-		subprocess.run(["amixer set Master mute"], shell=True)
-		self.current_volume, self.muted = self.getCurrentVolume()
-		mainLogger.info('[PLATFORM] mute() called, current volume: {CURRENT_VOLUME}, muted: {CURRENT_MUTE}'.format(CURRENT_VOLUME=self.current_volume, CURRENT_MUTE=self.muted))
-
-	def unMute(self):
-		subprocess.run(["amixer set Master unmute"], shell=True)
-		self.current_volume, self.muted = self.getCurrentVolume()
-		mainLogger.info('[PLATFORM] unMute() called, current volume: {CURRENT_VOLUME}, muted: {CURRENT_MUTE}'.format(CURRENT_VOLUME=self.current_volume, CURRENT_MUTE=self.muted))
-
-	def toggleMute(self):
-		if self.muted:
-			self.unMute()
-			return False
-		else:
-			self.mute()
-			return True
-
-	def getIpAddress(self):
-		try:
-			output = subprocess.check_output(['ip', '-4', 'addr', 'show', 'eth0'])
-			lines = output.decode('utf-8').split('\n')
-			line = lines[1]
-			final = line.split('brd')
-			line = final[0]
-			return line.replace(' ', '').replace('inet', '')
-		except Exception as e:
-			return 'no IP'
-
-	def incrementVolume(self):
-		subprocess.run(["amixer set Master 5%+ &"], shell=True)
-		self.current_volume, self.muted = self.getCurrentVolume()
-		mainLogger.info('[PLATFORM] incrementVolume() called, current volume: {CURRENT_VOLUME}, muted: {CURRENT_MUTE}'.format(CURRENT_VOLUME=self.current_volume, CURRENT_MUTE=self.muted))
-		return self.current_volume, self.muted
-
-	def decrementVolume(self):
-		subprocess.run(["amixer set Master 5%- &"], shell=True)
-		self.current_volume, self.muted = self.getCurrentVolume()
-		mainLogger.info('[PLATFORM] decrementVolume() called, current volume: {CURRENT_VOLUME}, muted: {CURRENT_MUTE}'.format(CURRENT_VOLUME=self.current_volume, CURRENT_MUTE=self.muted))
-		return self.current_volume, self.muted
-
-	def incrementBacklight(self):
-		try:
-			current_brightness = self.backlight.brightness
-			self.backlight.brightness = current_brightness + 5
-		except Exception as e:
-			pass
-		current_brightness = self.backlight.brightness
-		mainLogger.info('[PLATFORM] incrementBacklight() called, current brightness: {CURRENT_VOLUME}/255'.format(CURRENT_VOLUME=current_brightness))
-		return current_brightness
-
-	def decrementBacklight(self):
-		try:
-			current_brightness = self.backlight.brightness
-			if current_brightness <= 5:
-				pass
-			else:
-				self.backlight.brightness = current_brightness - 5
-		except Exception as e:
-			pass
-		current_brightness = self.backlight.brightness
-		mainLogger.info('[PLATFORM] decrementBacklight() called, current brightness: {CURRENT_VOLUME}/255'.format(CURRENT_VOLUME=current_brightness))
-		return current_brightness
-
-	def toggleDisplayPower(self):
-		if self.backlight.power:
-			self.backlight.power = False
-		else:
-			self.backlight.power = True
-
-	def startGpsMon(self):
-		subprocess.run(["lxterminal -e gpsmon"], shell=True)
-		mainLogger.info('[PLATFORM] startGpsMon() called, run command lxterminal -e gpsmon')
-
-	def startKernelLog(self):
-		subprocess.run(["lxterminal -e 'dmesg -w'"], shell=True)
-		mainLogger.info("[PLATFORM] startKernelLog() called, run command lxterminal -e 'dmesg -w'")
-
-	def startSysLog(self):
-		subprocess.run(["lxterminal -e 'tail -f {PATH}/main.log'".format(PATH=MAIN_LOG_PATH)], shell=True)
-		mainLogger.info("[PLATFORM] startSysLog() called, run command lxterminal -e 'tail -f /home/pi/log/cyberbox.log'")
-
-	def startOpenCPN(self):
-		subprocess.run(["{PATH}/scripts/start_opencpn.sh".format(PATH=path)], shell=True)
-		mainLogger.info('[PLATFORM] startOpenCPN() called, run script {PATH}/scripts/start_opencpn.sh'.format(PATH=path))
-
-	def stopOpenCPN(self):
-		subprocess.run(["{PATH}/scripts/stop_opencpn.sh".format(PATH=path)], shell=True)
-		mainLogger.info('[PLATFORM] stopOpenCPN() called, run script {PATH}/scripts/stop_opencpn.sh'.format(PATH=path))
-
-	def enableUSB(self):
-		subprocess.run(["sudo uhubctl -l 1-1 -p 2 -a 1"], shell=True)
-		self.parent.datapool.b_usb_enabled = True
-		time.sleep(1)
-		self.RTLsleep() #Doing this after a USB power cycle seems to reduce RTL sdr drawn current from 0.110A to 0.01A
-		mainLogger.info('[PLATFORM] enableUSB() called')
-
-	def RTLsleep(self):
-		subprocess.run(["sudo rtl_eeprom -d 0 -r /tmp/rtl_config"], shell=True)
-		subprocess.run(["sudo rtl_eeprom -d 1 -r /tmp/rtl_config"], shell=True)
-
-	def disableUSB(self):
-		subprocess.run(["sudo uhubctl -l 1-1 -p 2 -a 0"], shell=True)
-		self.parent.datapool.b_usb_enabled = False
-		mainLogger.info('[PLATFORM] disableUSB() called')
-
-	def enableWlan(self):
-		subprocess.run(["sudo iwconfig wlan0 txpower auto; sudo iwconfig wlan0 txpower auto"], shell=True)
-		mainLogger.info('[PLATFORM] enableWlan() called')
-
-	def disableWlan(self):
-		subprocess.run(["sudo iwconfig wlan0 txpower off"], shell=True)
-		mainLogger.info('[PLATFORM] disableWlan() called')
-
-	def startFileManager(self):
-		subprocess.run(["pcmanfm"], shell=True)
-		mainLogger.info('[PLATFORM] startFileManager() called')
-
-	def testAudio(self):
-		self.parent.alarm.enable()
-		subprocess.run(["aplay /home/pi/git/uwave-eas/eas-attn-8s-n40db.wav"], shell=True)
-		self.parent.alarm.disable()
-		mainLogger.info('[PLATFORM] testAudio() called')
-
-	def enableAudio(self):
-		GPIO.setup(AUDIO_PWR_PIN, GPIO.OUT)
-		GPIO.output(AUDIO_PWR_PIN, True)
-		self.parent.datapool.b_audio_enabled = True
-		mainLogger.info('[PLATFORM] enableAudio() called')
-
-	def disableAudio(self):
-		GPIO.setup(AUDIO_PWR_PIN, GPIO.OUT)
-		GPIO.output(AUDIO_PWR_PIN, False)
-		self.parent.datapool.b_audio_enabled = False
-		mainLogger.info('[PLATFORM] disableAudio() called')
-
-	def enableGPS(self):
-		GPIO.output(GPS_PWR_PIN, True)
-		mainLogger.info('[PLATFORM] enableGPS() called')
-
-	def disableGPS(self):
-		GPIO.output(GPS_PWR_PIN, False)
-		mainLogger.info('[PLATFORM] disableGPS() called')
-
-	def enableIMU(self):
-		GPIO.output(IMU_PWR_PIN, True)
-		mainLogger.info('[PLATFORM] enableIMU() called')
-
-	def disableIMU(self):
-		GPIO.output(IMU_PWR_PIN, False)
-		mainLogger.info('[PLATFORM] disableIMU() called')
-
-	def stopRtlTcp(self):
-		subprocess.run(["{PATH}/scripts/stop_rtltcp.sh".format(PATH=path)], shell=True)
-		mainLogger.info('[PLATFORM] stopRtlTcp() called, run script {PATH}/scripts/stop_rtltcp.sh'.format(PATH=path))
-
-	def startTcpServer(self, serno, lantype):
-		if lantype == 'LAN' and self.parent.datapool.b_eth0_status == State.CONNECTED:
-			ip = self.parent.datapool.s_eth0_ip
-			if serno == RF1_SER:
-				if self.parent.datapool.e_RF1_status == State.CONNECTED:
-					subprocess.run(["{PATH}/scripts/start_tcpserver.sh {INDEX} {PPM} {IP} {PORT}".format(PATH=path, INDEX=self.parent.datapool.i_RF1_index, PPM=RF1_PPM, IP=ip, PORT=RF1_TCP_PORT)], shell=True)
-					mainLogger.info('[PLATFORM] startTcpServer() called, run script {PATH}/scripts/start_tcpserver.sh'.format(PATH=path))
-				else:
-					mainLogger.warning('[PLATFORM] startTcpServer() called, but RF1 unit does not have CONNECTED state')
-			elif serno == RF2_SER:
-				if self.parent.datapool.e_RF2_status == State.CONNECTED:
-					subprocess.run(["{PATH}/scripts/start_tcpserver.sh {INDEX} {PPM} {IP} {PORT}".format(PATH=path, INDEX=self.parent.datapool.i_RF2_index, PPM=RF2_PPM , IP=ip, PORT=RF2_TCP_PORT)], shell=True)
-					mainLogger.info('[PLATFORM] startTcpServer() called, run script {PATH}/scripts/start_tcpserver.sh'.format(PATH=path))
-				else:
-					mainLogger.warning('[PLATFORM] startTcpServer() called, but RF2 unit does not have CONNECTED state')
-			else:
-				mainLogger.error('[PLATFORM] startTcpServer() called, but supplied serial number invalid')
-		elif lantype == 'WLAN' and self.parent.datapool.b_wlan0_status == State.CONNECTED:
-			ip = self.parent.datapool.s_wlan0_ip
-			if serno == RF1_SER:
-				if self.parent.datapool.e_RF1_status == State.CONNECTED:
-					subprocess.run(["{PATH}/scripts/start_tcpserver.sh {INDEX} {PPM} {IP} {PORT}".format(PATH=path, INDEX=self.parent.datapool.i_RF1_index, PPM=RF1_PPM, IP=self.parent.datapool.s_wlan0_ip, PORT=38211)], shell=True)
-					mainLogger.info('[PLATFORM] startTcpServer() called, run script {PATH}/scripts/start_tcpserver.sh'.format(PATH=path))
-				else:
-					mainLogger.warning('[PLATFORM] startTcpServer() called, but RF1 unit does not have CONNECTED state')
-			elif serno == RF2_SER:
-				if self.parent.datapool.e_RF2_status == State.CONNECTED:
-					subprocess.run(["{PATH}/scripts/start_tcpserver.sh {INDEX} {PPM} {IP} {PORT}".format(PATH=path, INDEX=self.parent.datapool.i_RF2_index, PPM=RF2_PPM , IP=self.parent.datapool.s_wlan0_ip, PORT=38212)], shell=True)
-					mainLogger.info('[PLATFORM] startTcpServer() called, run script {PATH}/scripts/start_tcpserver.sh'.format(PATH=path))
-				else:
-					mainLogger.warning('[PLATFORM] startTcpServer() called, but RF2 unit does not have CONNECTED state')
-			else:
-				mainLogger.error('[PLATFORM] startTcpServer() called, but supplied serial number invalid')
-		else:
-			mainLogger.error('[PLATFORM] startTcpServer() called, but supplied interface is not up or is wrong')
-
-	def setBiasTeeUnit(self, unit, enabled):
-		if enabled:
-			biast_enabled = 1
-		else:
-			biast_enabled = 0
-		subprocess.run(["/home/pi/git/rtl-sdr-blog/build/src/rtl_biast -d {UNIT} -b {ENABLED}".format(UNIT=unit, ENABLED=biast_enabled)], shell=True)
-		mainLogger.info('[PLATFORM] setBiasTeeUnit({UNIT}, {ENABLED}) called'.format(UNIT=unit, ENABLED=biast_enabled))
-
 def setup_logger(name, log_file, level=logging.INFO):
-	formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+	formatter = logging.Formatter('%(asctime)s %(name)s %(levelname)s %(message)s')
 	logging.Formatter.converter = time.gmtime
 	fileHandler = logging.FileHandler(log_file)
 	streamHandler = logging.StreamHandler()
