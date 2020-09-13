@@ -25,7 +25,7 @@ import re
 import board
 from adafruit_ina219 import ADCResolution, BusVoltageRange, INA219, Mode
 from enum import Enum
-from configuration import *
+
 
 
 class Platform():
@@ -48,8 +48,21 @@ class Platform():
 		self.logger.info('[PLATFORM] __init__() called')
 		self.ip_address = self.getIpAddress()
 
+		self.scriptpath = '/home/pi/git/pisdr-cyberdeck/src/scripts'
+
 		self.backlight.fade_duration = 0.2
 		self.current_volume, self.muted = self.getCurrentVolume()
+
+
+		GPIO.setmode(GPIO.BCM)  # set board mode to Broadcom -> this means use GPIO numbers, NOT header pin numbers
+		GPIO.setup(self.parent.datapool.AUDIO_PWR_PIN, GPIO.OUT)
+		GPIO.setup(self.parent.datapool.GPS_PWR_PIN, GPIO.OUT)
+		GPIO.setup(self.parent.datapool.IMU_PWR_PIN, GPIO.OUT)
+		GPIO.setup(self.parent.datapool.ALARM_LED_PIN, GPIO.OUT)
+
+		self.I2C_BUS = board.I2C()
+		FNULL = open(os.devnull, 'w')
+
 
 		try:
 			self.gps = GPS(self, 'localhost', 2947)
@@ -57,26 +70,26 @@ class Platform():
 		except Exception as e:
 			pass
 
-		if AUTOSTART_NAV:
+		if self.parent.datapool.AUTOSTART_NAV:
 			self.stopApplications()
 			self.startNav()
 
-		if DISABLE_AUDIO_UPON_START:
+		if self.parent.datapool.DISABLE_AUDIO_UPON_START:
 			self.disableAudio()
 
-		if DISABLE_USB_UPON_START:
+		if self.parent.datapool.DISABLE_USB_UPON_START:
 			self.disableUSB()
 
 	def stopApplications(self):
-		subprocess.run(["{PATH}/scripts/stop_all_applications.sh".format(PATH=path)], shell=True)
+		subprocess.run(["{PATH}/stop_all_applications.sh".format(PATH=self.scriptpath)], shell=True)
 
 	def reboot(self):
-		self.logger.info('[PLATFORM] reboot() called, proceeding to "sudo reboot now"...'.format(PATH=path))
+		self.logger.info('[PLATFORM] reboot() called, proceeding to "sudo reboot now"...'.format(PATH=self.scriptpath))
 		subprocess.run(["sudo reboot now"], shell=True)
 
 	def shutdown(self):
-		subprocess.run(["{PATH}/scripts/stop_all_applications.sh".format(PATH=path)], shell=True)
-		self.logger.info('[PLATFORM] shutdown() called, ran script {PATH}/scripts/stop_all_applications.sh, proceeding to "sudo shutdown now"...'.format(PATH=path))
+		subprocess.run(["{PATH}/stop_all_applications.sh".format(PATH=self.scriptpath)], shell=True)
+		self.logger.info('[PLATFORM] shutdown() called, ran script {PATH}/stop_all_applications.sh, proceeding to "sudo shutdown now"...'.format(PATH=self.scriptpath))
 		subprocess.run(["sudo shutdown now"], shell=True)
 
 	def takeScreenshot(self):
@@ -85,112 +98,112 @@ class Platform():
 		return True
 
 	def startAcars(self, serno):
-		if serno == RF1_SER:
+		if serno == self.parent.datapool.RF1_SER:
 			if self.parent.datapool.e_RF1_status == State.CONNECTED:
-				subprocess.run(["{PATH}/scripts/start_acars.sh {SERNO} {PPM}".format(PATH=path, SERNO=RF1_SER, PPM=RF1_PPM)], shell=True)
-				self.logger.info('[PLATFORM] startAcars() called, run script {PATH}/scripts/start_acars.sh'.format(PATH=path))
+				subprocess.run(["{PATH}/start_acars.sh {SERNO} {PPM}".format(PATH=self.scriptpath, SERNO=self.parent.datapool.RF1_SER, PPM=self.parent.datapool.RF1_PPM)], shell=True)
+				self.logger.info('[PLATFORM] startAcars() called, run script {PATH}/start_acars.sh'.format(PATH=self.scriptpath))
 			else:
 				self.logger.warning('[PLATFORM] startAcars() called, but RF1 unit does not have CONNECTED state')
-		elif serno == RF2_SER:
+		elif serno == self.parent.datapool.RF2_SER:
 			if self.parent.datapool.e_RF2_status == State.CONNECTED:
-				subprocess.run(["{PATH}/scripts/start_acars.sh {SERNO} {PPM}".format(PATH=path, SERNO=RF2_SER, PPM=RF2_PPM)], shell=True)
-				self.logger.info('[PLATFORM] startAcars() called, run script {PATH}/scripts/start_vdl.sh'.format(PATH=path))
+				subprocess.run(["{PATH}/start_acars.sh {SERNO} {PPM}".format(PATH=self.scriptpath, SERNO=self.parent.datapool.RF2_SER, PPM=self.parent.datapool.RF2_PPM)], shell=True)
+				self.logger.info('[PLATFORM] startAcars() called, run script {PATH}/start_vdl.sh'.format(PATH=self.scriptpath))
 			else:
 				self.logger.warning('[PLATFORM] startAcars() called, but RF2 unit does not have CONNECTED state')
 		else:
 			self.logger.error('[PLATFORM] startAcars() called, but supplied serial number invalid')
 
 	def stopAcars(self):
-		subprocess.run(["{PATH}/scripts/stop_acars.sh".format(PATH=path)], shell=True)
-		self.logger.info('[PLATFORM] stopAcars() called, run script {PATH}/scripts/stop_acars.sh'.format(PATH=path))
+		subprocess.run(["{PATH}/stop_acars.sh".format(PATH=self.scriptpath)], shell=True)
+		self.logger.info('[PLATFORM] stopAcars() called, run script {PATH}/stop_acars.sh'.format(PATH=self.scriptpath))
 		self.RTLsleep()
 		return True
 
 	def startVdl2(self, serno):
-		if serno == RF1_SER:
+		if serno == self.parent.datapool.RF1_SER:
 			if self.parent.datapool.e_RF1_status == State.CONNECTED:
-				subprocess.run(["{PATH}/scripts/start_vdl.sh {SERNO} {PPM}".format(PATH=path, SERNO=RF1_SER, PPM=RF1_PPM)], shell=True)
-				self.logger.info('[PLATFORM] startVdl2() called, run script {PATH}/scripts/start_vdl.sh'.format(PATH=path))
+				subprocess.run(["{PATH}/start_vdl.sh {SERNO} {PPM}".format(PATH=self.scriptpath, SERNO=self.parent.datapool.RF1_SER, PPM=self.parent.datapool.RF1_PPM)], shell=True)
+				self.logger.info('[PLATFORM] startVdl2() called, run script {PATH}/start_vdl.sh'.format(PATH=self.scriptpath))
 			else:
 				self.logger.warning('[PLATFORM] startVdl2() called, but RF1 unit does not have CONNECTED state')
-		elif serno == RF2_SER:
+		elif serno == self.parent.datapool.RF2_SER:
 			if self.parent.datapool.e_RF2_status == State.CONNECTED:
-				subprocess.run(["{PATH}/scripts/start_vdl.sh {SERNO} {PPM}".format(PATH=path, SERNO=RF2_SER, PPM=RF2_PPM)], shell=True)
-				self.logger.info('[PLATFORM] startVdl2() called, run script {PATH}/scripts/start_vdl.sh'.format(PATH=path))
+				subprocess.run(["{PATH}/start_vdl.sh {SERNO} {PPM}".format(PATH=self.scriptpath, SERNO=self.parent.datapool.RF2_SER, PPM=self.parent.datapool.RF2_PPM)], shell=True)
+				self.logger.info('[PLATFORM] startVdl2() called, run script {PATH}/start_vdl.sh'.format(PATH=self.scriptpath))
 			else:
 				self.logger.warning('[PLATFORM] startVdl2() called, but RF2 unit does not have CONNECTED state')
 		else:
 			self.logger.error('[PLATFORM] startVdl2() called, but supplied serial number invalid')
 
 	def stopVdl2(self):
-		subprocess.run(["{PATH}/scripts/stop_vdl.sh".format(PATH=path)], shell=True)
-		self.logger.info('[PLATFORM] stopVdl2() called, run script {PATH}/scripts/stop_vdl.sh'.format(PATH=path))
+		subprocess.run(["{PATH}/stop_vdl.sh".format(PATH=self.scriptpath)], shell=True)
+		self.logger.info('[PLATFORM] stopVdl2() called, run script {PATH}/stop_vdl.sh'.format(PATH=self.scriptpath))
 		self.RTLsleep()
 		return True
 
 	def startAIS(self, serno):
 		if serno == RF1_SER:
 			if self.parent.datapool.e_RF1_status == State.CONNECTED:
-				subprocess.run(["{PATH}/scripts/start_ais.sh {INDEX} {PPM}".format(PATH=path, INDEX=self.parent.datapool.i_RF1_index, PPM=RF1_PPM)], shell=True)
-				self.logger.info('[PLATFORM] startAIS() called, run script {PATH}/scripts/start_ais.sh'.format(PATH=path))
+				subprocess.run(["{PATH}/start_ais.sh {INDEX} {PPM}".format(PATH=self.scriptpath, INDEX=self.parent.datapool.i_RF1_index, PPM=self.parent.datapool.RF1_PPM)], shell=True)
+				self.logger.info('[PLATFORM] startAIS() called, run script {PATH}/start_ais.sh'.format(PATH=self.scriptpath))
 			else:
 				self.logger.warning('[PLATFORM] startAIS() called, but RF1 unit does not have CONNECTED state')
 		elif serno == RF2_SER:
 			if self.parent.datapool.e_RF2_status == State.CONNECTED:
-				subprocess.run(["{PATH}/scripts/start_ais.sh {INDEX} {PPM}".format(PATH=path, INDEX=self.parent.datapool.i_RF2_index, PPM=RF2_PPM)], shell=True)
-				self.logger.info('[PLATFORM] startAIS() called, run script {PATH}/scripts/start_ais.sh'.format(PATH=path))
+				subprocess.run(["{PATH}/start_ais.sh {INDEX} {PPM}".format(PATH=self.scriptpath, INDEX=self.parent.datapool.i_RF2_index, PPM=self.parent.datapool.RF2_PPM)], shell=True)
+				self.logger.info('[PLATFORM] startAIS() called, run script {PATH}/start_ais.sh'.format(PATH=self.scriptpath))
 			else:
 				self.logger.warning('[PLATFORM] startAIS() called, but RF2 unit does not have CONNECTED state')
 		else:
 			self.logger.error('[PLATFORM] startAIS() called, but supplied serial number invalid')
 
 	def stopAIS(self):
-		subprocess.run(["{PATH}/scripts/stop_ais.sh".format(PATH=path)], shell=True)
-		self.logger.info('[PLATFORM] stopAIS() called, run script {PATH}/scripts/stop_ais.sh'.format(PATH=path))
+		subprocess.run(["{PATH}/stop_ais.sh".format(PATH=self.scriptpath)], shell=True)
+		self.logger.info('[PLATFORM] stopAIS() called, run script {PATH}/stop_ais.sh'.format(PATH=self.scriptpath))
 		return True
 
 	def startADSB(self, serno):
-		if serno == RF1_SER:
+		if serno == self.parent.datapool.RF1_SER:
 			if self.parent.datapool.e_RF1_status == State.CONNECTED:
-				subprocess.run(["{PATH}/scripts/start_adsb.sh {SERNO} {PPM}".format(PATH=path, SERNO=RF1_SER, PPM=RF1_PPM)], shell=True)
-				self.logger.info('[PLATFORM] startADSB() called, run script {PATH}/scripts/start_adsb.sh'.format(PATH=path))
+				subprocess.run(["{PATH}/start_adsb.sh {SERNO} {PPM}".format(PATH=self.scriptpath, SERNO=self.parent.datapool.RF1_SER, PPM=self.parent.datapool.RF1_PPM)], shell=True)
+				self.logger.info('[PLATFORM] startADSB() called, run script {PATH}/start_adsb.sh'.format(PATH=self.scriptpath))
 			else:
 				self.logger.warning('[PLATFORM] startADSB() called, but RF1 unit does not have CONNECTED state')
-		elif serno == RF2_SER:
+		elif serno == self.parent.datapool.RF2_SER:
 			if self.parent.datapool.e_RF2_status == State.CONNECTED:
-				subprocess.run(["{PATH}/scripts/start_adsb.sh {SERNO} {PPM}".format(PATH=path, SERNO=RF2_SER, PPM=RF2_PPM)], shell=True)
-				self.logger.info('[PLATFORM] startADSB() called, run script {PATH}/scripts/start_adsb.sh'.format(PATH=path))
+				subprocess.run(["{PATH}/start_adsb.sh {SERNO} {PPM}".format(PATH=self.scriptpath, SERNO=self.parent.datapool.RF2_SER, PPM=self.parent.datapool.RF2_PPM)], shell=True)
+				self.logger.info('[PLATFORM] startADSB() called, run script {PATH}/start_adsb.sh'.format(PATH=self.scriptpath))
 			else:
 				self.logger.warning('[PLATFORM] startADSB() called, but RF2 unit does not have CONNECTED state')
 		else:
 			self.logger.error('[PLATFORM] startADSB() called, but supplied serial number invalid')
 
 	def stopADSB(self):
-		subprocess.run(["{PATH}/scripts/stop_adsb.sh".format(PATH=path)], shell=True)
-		self.logger.info('[PLATFORM] stopADSB() called, run script {PATH}/scripts/stop_adsb.sh'.format(PATH=path))
+		subprocess.run(["{PATH}/stop_adsb.sh".format(PATH=self.scriptpath)], shell=True)
+		self.logger.info('[PLATFORM] stopADSB() called, run script {PATH}/stop_adsb.sh'.format(PATH=self.scriptpath))
 		return True
 
 	def startGQRX(self, serno, mode):
-		if serno == RF1_SER:
+		if serno == self.parent.datapool.RF1_SER:
 			if self.parent.datapool.e_RF1_status == State.CONNECTED:
 				if mode == 'vhf':
-					subprocess.run(["{PATH}/scripts/start_gqrx.sh {INDEX} {MODE}".format(PATH=path, INDEX=self.parent.datapool.i_RF1_index, MODE='vhf')], shell=True)
-					self.logger.info('[PLATFORM] startGQRX() called, run script {PATH}/scripts/start_gqrx.sh'.format(PATH=path))
+					subprocess.run(["{PATH}/start_gqrx.sh {INDEX} {MODE}".format(PATH=self.scriptpath, INDEX=self.parent.datapool.i_RF1_index, MODE='vhf')], shell=True)
+					self.logger.info('[PLATFORM] startGQRX() called, run script {PATH}/start_gqrx.sh'.format(PATH=self.scriptpath))
 				elif mode == 'hf':
-					subprocess.run(["{PATH}/scripts/start_gqrx.sh {INDEX} {MODE}".format(PATH=path, INDEX=self.parent.datapool.i_RF1_index, MODE='hf')], shell=True)
-					self.logger.info('[PLATFORM] startGQRX() called, run script {PATH}/scripts/start_gqrx.sh'.format(PATH=path))
+					subprocess.run(["{PATH}/start_gqrx.sh {INDEX} {MODE}".format(PATH=self.scriptpath, INDEX=self.parent.datapool.i_RF1_index, MODE='hf')], shell=True)
+					self.logger.info('[PLATFORM] startGQRX() called, run script {PATH}/start_gqrx.sh'.format(PATH=self.scriptpath))
 				else:
 					self.logger.warning('[PLATFORM] startGQRX() called, but passed mode invalid')
 			else:
 				self.logger.warning('[PLATFORM] startGQRX() called, but RF1 unit does not have CONNECTED state')
-		elif serno == RF2_SER:
+		elif serno == self.parent.datapool.RF2_SER:
 			if self.parent.datapool.e_RF2_status == State.CONNECTED:
 				if mode == 'vhf':
-					subprocess.run(["{PATH}/scripts/start_gqrx.sh {INDEX} {MODE}".format(PATH=path, INDEX=self.parent.datapool.i_RF2_index, MODE='vhf')], shell=True)
-					self.logger.info('[PLATFORM] startGQRX() called, run script {PATH}/scripts/start_gqrx.sh'.format(PATH=path))
+					subprocess.run(["{PATH}/start_gqrx.sh {INDEX} {MODE}".format(PATH=self.scriptpath, INDEX=self.parent.datapool.i_RF2_index, MODE='vhf')], shell=True)
+					self.logger.info('[PLATFORM] startGQRX() called, run script {PATH}/start_gqrx.sh'.format(PATH=self.scriptpath))
 				elif mode == 'hf':
-					subprocess.run(["{PATH}/scripts/start_gqrx.sh {INDEX} {MODE}".format(PATH=path, INDEX=self.parent.datapool.i_RF2_index, MODE='hf')], shell=True)
-					self.logger.info('[PLATFORM] startGQRX() called, run script {PATH}/scripts/start_gqrx.sh'.format(PATH=path))
+					subprocess.run(["{PATH}/start_gqrx.sh {INDEX} {MODE}".format(PATH=self.scriptpath, INDEX=self.parent.datapool.i_RF2_index, MODE='hf')], shell=True)
+					self.logger.info('[PLATFORM] startGQRX() called, run script {PATH}/start_gqrx.sh'.format(PATH=self.scriptpath))
 				else:
 					self.logger.warning('[PLATFORM] startGQRX() called, but passed mode invalid')
 			else:
@@ -199,13 +212,13 @@ class Platform():
 			self.logger.error('[PLATFORM] startGQRX() called, but supplied serial number invalid')
 
 	def stopGQRX(self):
-		subprocess.run(["{PATH}/scripts/stop_gqrx.sh".format(PATH=path)], shell=True)
-		self.logger.info('[PLATFORM] stopGQRX() called, run script {PATH}/scripts/stop_gqrx.sh'.format(PATH=path))
+		subprocess.run(["{PATH}/stop_gqrx.sh".format(PATH=self.scriptpath)], shell=True)
+		self.logger.info('[PLATFORM] stopGQRX() called, run script {PATH}/stop_gqrx.sh'.format(PATH=self.scriptpath))
 		return True
 
 	def startGQRX_noconfig(self):
-		subprocess.run(["{PATH}/scripts/start_gqrx_noconfig.sh".format(PATH=path)], shell=True)
-		self.logger.info('[PLATFORM] startGQRX_noconfig() called, run script {PATH}/scripts/start_gqrx_noconfig.sh'.format(PATH=path))
+		subprocess.run(["{PATH}/start_gqrx_noconfig.sh".format(PATH=self.scriptpath)], shell=True)
+		self.logger.info('[PLATFORM] startGQRX_noconfig() called, run script {PATH}/start_gqrx_noconfig.sh'.format(PATH=self.scriptpath))
 		return True
 
 	def getCurrentVolume(self):
@@ -226,28 +239,28 @@ class Platform():
 		return current_brightness
 
 	def stopNav(self):
-		subprocess.run(["{PATH}/scripts/stop_xastir.sh".format(PATH=path)], shell=True)
-		self.logger.info('[PLATFORM] stopNav() called, run script {PATH}/scripts/stop_xastir.sh'.format(PATH=path))
+		subprocess.run(["{PATH}/stop_xastir.sh".format(PATH=self.scriptpath)], shell=True)
+		self.logger.info('[PLATFORM] stopNav() called, run script {PATH}/stop_xastir.sh'.format(PATH=self.scriptpath))
 
 	def startNav(self):
-		subprocess.run(["{PATH}/scripts/start_xastir.sh".format(PATH=path)], shell=True)
-		self.logger.info('[PLATFORM] startNav() called, run script {PATH}/scripts/start_xastir.sh'.format(PATH=path))
+		subprocess.run(["{PATH}/start_xastir.sh".format(PATH=self.scriptpath)], shell=True)
+		self.logger.info('[PLATFORM] startNav() called, run script {PATH}/start_xastir.sh'.format(PATH=self.scriptpath))
 
 	def startDigi(self):
-		subprocess.run(["{PATH}/scripts/start_fldigi.sh".format(PATH=path)], shell=True)
-		self.logger.info('[PLATFORM] startDigi() called, run script {PATH}/scripts/start_fldigi.sh'.format(PATH=path))
+		subprocess.run(["{PATH}/start_fldigi.sh".format(PATH=self.scriptpath)], shell=True)
+		self.logger.info('[PLATFORM] startDigi() called, run script {PATH}/start_fldigi.sh'.format(PATH=self.scriptpath))
 
 	def stopDigi(self):
-		subprocess.run(["{PATH}/scripts/stop_fldigi.sh".format(PATH=path)], shell=True)
-		self.logger.info('[PLATFORM] stopDigi() called, run script {PATH}/scripts/stop_fldigi.sh'.format(PATH=path))
+		subprocess.run(["{PATH}/stop_fldigi.sh".format(PATH=self.scriptpath)], shell=True)
+		self.logger.info('[PLATFORM] stopDigi() called, run script {PATH}/stop_fldigi.sh'.format(PATH=self.scriptpath))
 
 	def startKeyboard(self):
-		subprocess.run(["{PATH}/scripts/start_keyboard.sh".format(PATH=path)], shell=True)
-		self.logger.info('[PLATFORM] startKeyboard() called, run script {PATH}/scripts/start_keyboard.sh'.format(PATH=path))
+		subprocess.run(["{PATH}/start_keyboard.sh".format(PATH=self.scriptpath)], shell=True)
+		self.logger.info('[PLATFORM] startKeyboard() called, run script {PATH}/start_keyboard.sh'.format(PATH=self.scriptpath))
 
 	def startKrono(self):
-		subprocess.run(["{PATH}/scripts/start_chrono.sh".format(PATH=path)], shell=True)
-		self.logger.info('[PLATFORM] startKrono() called, run script {PATH}/scripts/start_chrono.sh'.format(PATH=path))
+		subprocess.run(["{PATH}/start_chrono.sh".format(PATH=self.scriptpath)], shell=True)
+		self.logger.info('[PLATFORM] startKrono() called, run script {PATH}/start_chrono.sh'.format(PATH=self.scriptpath))
 
 	def mute(self):
 		subprocess.run(["amixer set Master mute"], shell=True)
@@ -328,16 +341,16 @@ class Platform():
 		self.logger.info("[PLATFORM] startKernelLog() called, run command lxterminal -e 'dmesg -w'")
 
 	def startSysLog(self):
-		subprocess.run(["lxterminal -e 'tail -f {PATH}/main.log'".format(PATH=MAIN_LOG_PATH)], shell=True)
+		subprocess.run(["lxterminal -e 'tail -f {PATH}/main.log'".format(PATH=self.parent.datapool.MAIN_LOG_PATH)], shell=True)
 		self.logger.info("[PLATFORM] startSysLog() called, run command lxterminal -e 'tail -f /home/pi/log/cyberbox.log'")
 
 	def startOpenCPN(self):
-		subprocess.run(["{PATH}/scripts/start_opencpn.sh".format(PATH=path)], shell=True)
-		self.logger.info('[PLATFORM] startOpenCPN() called, run script {PATH}/scripts/start_opencpn.sh'.format(PATH=path))
+		subprocess.run(["{PATH}/start_opencpn.sh".format(PATH=self.scriptpath)], shell=True)
+		self.logger.info('[PLATFORM] startOpenCPN() called, run script {PATH}/start_opencpn.sh'.format(PATH=self.scriptpath))
 
 	def stopOpenCPN(self):
-		subprocess.run(["{PATH}/scripts/stop_opencpn.sh".format(PATH=path)], shell=True)
-		self.logger.info('[PLATFORM] stopOpenCPN() called, run script {PATH}/scripts/stop_opencpn.sh'.format(PATH=path))
+		subprocess.run(["{PATH}/stop_opencpn.sh".format(PATH=self.scriptpath)], shell=True)
+		self.logger.info('[PLATFORM] stopOpenCPN() called, run script {PATH}/stop_opencpn.sh'.format(PATH=self.scriptpath))
 
 	def enableUSB(self):
 		subprocess.run(["sudo uhubctl -l 1-1 -p 2 -a 1"], shell=True)
@@ -374,66 +387,66 @@ class Platform():
 		self.logger.info('[PLATFORM] testAudio() called')
 
 	def enableAudio(self):
-		GPIO.setup(AUDIO_PWR_PIN, GPIO.OUT)
-		GPIO.output(AUDIO_PWR_PIN, True)
+		GPIO.setup(self.parent.datapool.AUDIO_PWR_PIN, GPIO.OUT)
+		GPIO.output(self.parent.datapool.AUDIO_PWR_PIN, True)
 		self.parent.datapool.b_audio_enabled = True
 		self.logger.info('[PLATFORM] enableAudio() called')
 
 	def disableAudio(self):
-		GPIO.setup(AUDIO_PWR_PIN, GPIO.OUT)
-		GPIO.output(AUDIO_PWR_PIN, False)
+		GPIO.setup(self.parent.datapool.AUDIO_PWR_PIN, GPIO.OUT)
+		GPIO.output(self.parent.datapool.AUDIO_PWR_PIN, False)
 		self.parent.datapool.b_audio_enabled = False
 		self.logger.info('[PLATFORM] disableAudio() called')
 
 	def enableGPS(self):
-		GPIO.output(GPS_PWR_PIN, True)
+		GPIO.output(self.parent.datapool.GPS_PWR_PIN, True)
 		self.logger.info('[PLATFORM] enableGPS() called')
 
 	def disableGPS(self):
-		GPIO.output(GPS_PWR_PIN, False)
+		GPIO.output(self.parent.datapool.GPS_PWR_PIN, False)
 		self.logger.info('[PLATFORM] disableGPS() called')
 
 	def enableIMU(self):
-		GPIO.output(IMU_PWR_PIN, True)
+		GPIO.output(self.parent.datapool.IMU_PWR_PIN, True)
 		self.logger.info('[PLATFORM] enableIMU() called')
 
 	def disableIMU(self):
-		GPIO.output(IMU_PWR_PIN, False)
+		GPIO.output(self.parent.datapool.IMU_PWR_PIN, False)
 		self.logger.info('[PLATFORM] disableIMU() called')
 
 	def stopRtlTcp(self):
-		subprocess.run(["{PATH}/scripts/stop_rtltcp.sh".format(PATH=path)], shell=True)
-		self.logger.info('[PLATFORM] stopRtlTcp() called, run script {PATH}/scripts/stop_rtltcp.sh'.format(PATH=path))
+		subprocess.run(["{PATH}/stop_rtltcp.sh".format(PATH=self.scriptpath)], shell=True)
+		self.logger.info('[PLATFORM] stopRtlTcp() called, run script {PATH}/stop_rtltcp.sh'.format(PATH=self.scriptpath))
 
 	def startTcpServer(self, serno, lantype):
 		if lantype == 'LAN' and self.parent.datapool.b_eth0_status == State.CONNECTED:
 			ip = self.parent.datapool.s_eth0_ip
-			if serno == RF1_SER:
+			if serno == self.parent.datapool.RF1_SER:
 				if self.parent.datapool.e_RF1_status == State.CONNECTED:
-					subprocess.run(["{PATH}/scripts/start_tcpserver.sh {INDEX} {PPM} {IP} {PORT}".format(PATH=path, INDEX=self.parent.datapool.i_RF1_index, PPM=RF1_PPM, IP=ip, PORT=RF1_TCP_PORT)], shell=True)
-					self.logger.info('[PLATFORM] startTcpServer() called, run script {PATH}/scripts/start_tcpserver.sh'.format(PATH=path))
+					subprocess.run(["{PATH}/start_tcpserver.sh {INDEX} {PPM} {IP} {PORT}".format(PATH=self.scriptpath, INDEX=self.parent.datapool.i_RF1_index, PPM=self.parent.datapool.RF1_PPM, IP=ip, PORT=self.parent.datapool.RF1_TCP_PORT)], shell=True)
+					self.logger.info('[PLATFORM] startTcpServer() called, run script {PATH}/start_tcpserver.sh'.format(PATH=self.scriptpath))
 				else:
 					self.logger.warning('[PLATFORM] startTcpServer() called, but RF1 unit does not have CONNECTED state')
-			elif serno == RF2_SER:
+			elif serno == self.parent.datapool.RF2_SER:
 				if self.parent.datapool.e_RF2_status == State.CONNECTED:
-					subprocess.run(["{PATH}/scripts/start_tcpserver.sh {INDEX} {PPM} {IP} {PORT}".format(PATH=path, INDEX=self.parent.datapool.i_RF2_index, PPM=RF2_PPM , IP=ip, PORT=RF2_TCP_PORT)], shell=True)
-					self.logger.info('[PLATFORM] startTcpServer() called, run script {PATH}/scripts/start_tcpserver.sh'.format(PATH=path))
+					subprocess.run(["{PATH}/start_tcpserver.sh {INDEX} {PPM} {IP} {PORT}".format(PATH=self.scriptpath, INDEX=self.parent.datapool.i_RF2_index, PPM=self.parent.datapool.RF2_PPM , IP=ip, PORT=self.parent.datapool.RF2_TCP_PORT)], shell=True)
+					self.logger.info('[PLATFORM] startTcpServer() called, run script {PATH}/start_tcpserver.sh'.format(PATH=self.scriptpath))
 				else:
 					self.logger.warning('[PLATFORM] startTcpServer() called, but RF2 unit does not have CONNECTED state')
 			else:
 				self.logger.error('[PLATFORM] startTcpServer() called, but supplied serial number invalid')
 		elif lantype == 'WLAN' and self.parent.datapool.b_wlan0_status == State.CONNECTED:
 			ip = self.parent.datapool.s_wlan0_ip
-			if serno == RF1_SER:
+			if serno == self.parent.datapool.RF1_SER:
 				if self.parent.datapool.e_RF1_status == State.CONNECTED:
-					subprocess.run(["{PATH}/scripts/start_tcpserver.sh {INDEX} {PPM} {IP} {PORT}".format(PATH=path, INDEX=self.parent.datapool.i_RF1_index, PPM=RF1_PPM, IP=self.parent.datapool.s_wlan0_ip, PORT=38211)], shell=True)
-					self.logger.info('[PLATFORM] startTcpServer() called, run script {PATH}/scripts/start_tcpserver.sh'.format(PATH=path))
+					subprocess.run(["{PATH}/start_tcpserver.sh {INDEX} {PPM} {IP} {PORT}".format(PATH=self.scriptpath, INDEX=self.parent.datapool.i_RF1_index, PPM=self.parent.datapool.RF1_PPM, IP=self.parent.datapool.s_wlan0_ip, PORT=38211)], shell=True)
+					self.logger.info('[PLATFORM] startTcpServer() called, run script {PATH}/start_tcpserver.sh'.format(PATH=self.scriptpath))
 				else:
 					self.logger.warning('[PLATFORM] startTcpServer() called, but RF1 unit does not have CONNECTED state')
-			elif serno == RF2_SER:
+			elif serno == self.parent.datapool.RF2_SER:
 				if self.parent.datapool.e_RF2_status == State.CONNECTED:
-					subprocess.run(["{PATH}/scripts/start_tcpserver.sh {INDEX} {PPM} {IP} {PORT}".format(PATH=path, INDEX=self.parent.datapool.i_RF2_index, PPM=RF2_PPM , IP=self.parent.datapool.s_wlan0_ip, PORT=38212)], shell=True)
-					self.logger.info('[PLATFORM] startTcpServer() called, run script {PATH}/scripts/start_tcpserver.sh'.format(PATH=path))
+					subprocess.run(["{PATH}/start_tcpserver.sh {INDEX} {PPM} {IP} {PORT}".format(PATH=self.scriptpath, INDEX=self.parent.datapool.i_RF2_index, PPM=self.parent.datapool.RF2_PPM , IP=self.parent.datapool.s_wlan0_ip, PORT=38212)], shell=True)
+					self.logger.info('[PLATFORM] startTcpServer() called, run script {PATH}/start_tcpserver.sh'.format(PATH=self.scriptpath))
 				else:
 					self.logger.warning('[PLATFORM] startTcpServer() called, but RF2 unit does not have CONNECTED state')
 			else:

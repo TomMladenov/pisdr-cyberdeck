@@ -3,7 +3,10 @@
 
 __author__ = 'Tom Mladenov'
 
-from configuration import *
+from configparser import SafeConfigParser
+import ast
+import logging
+import os
 
 class Datapool():
 
@@ -88,5 +91,52 @@ class Datapool():
 	#Obc
 	s_obc_uptime = ''
 
-	def __init__(self, parent=None):
-		pass
+	def __init__(self, config_path):
+
+		try:
+			self.parser = SafeConfigParser()
+			self.parser.read(config_path)
+		except Exception as e:
+			print(e)
+
+
+		self.T_HIGH_OBC_ERR = self.parser.getfloat('limits', 'T_HIGH_OBC_ERR')
+		self.T_HIGH_OBC_WARN = self.parser.getfloat('limits', 'T_HIGH_OBC_WARN')
+
+		self.T_HIGH_OBC_CORE_ERR = self.parser.getfloat('limits', 'T_HIGH_OBC_CORE_ERR')
+		self.T_HIGH_OBC_CORE_WARN = self.parser.getfloat('limits', 'T_HIGH_OBC_CORE_WARN')
+
+		self.T_HIGH_BATT_ERR = self.parser.getfloat('limits', 'T_HIGH_BATT_ERR')
+		self.T_HIGH_BATT_WARN = self.parser.getfloat('limits', 'T_HIGH_BATT_WARN')
+
+		self.T_HIGH_DCDC_ERR = self.parser.getfloat('limits', 'T_HIGH_DCDC_ERR')
+		self.T_HIGH_DCDC_WARN = self.parser.getfloat('limits', 'T_HIGH_DCDC_WARN')
+
+
+		self.BATT_TEMP_ID = self.parser.get('temp-ids', 'BATT_TEMP_ID')
+		self.DCDC_TEMP_ID = self.parser.get('temp-ids', 'DCDC_TEMP_ID')
+		self.OBC_TEMP_ID = self.parser.get('temp-ids', 'OBC_TEMP_ID')
+
+		self.AUDIO_PWR_PIN = self.parser.getint('pin-assignments', 'AUDIO_PWR_PIN')
+		self.GPS_PWR_PIN = self.parser.getint('pin-assignments', 'GPS_PWR_PIN')
+		self.IMU_PWR_PIN = self.parser.getint('pin-assignments', 'IMU_PWR_PIN')
+		self.ALARM_LED_PIN = self.parser.getint('pin-assignments', 'ALARM_LED_PIN')
+
+		self.INA219_ADDR_CH0 = self.parser.get('address-assignment', 'INA219_ADDR_CH0')
+		self.INA219_ADDR_CH1 = self.parser.get('address-assignment', 'INA219_ADDR_CH1')
+
+		self.AUTOSTART_NAV = self.parser.getboolean('start', 'AUTOSTART_NAV')
+		self.DISABLE_USB_UPON_START = self.parser.getboolean('start', 'DISABLE_USB_UPON_START')
+		self.DISABLE_AUDIO_UPON_START = self.parser.getboolean('start', 'DISABLE_AUDIO_UPON_START')
+
+		self.RF1_SER = self.parser.get('rf', 'RF1_SER')
+		self.RF1_PPM = self.parser.getint('rf', 'RF1_PPM')
+		self.RF1_TCP_PORT = self.parser.getint('rf', 'RF1_TCP_PORT')
+
+		self.RF2_SER = self.parser.get('rf', 'RF2_SER')
+		self.RF2_PPM = self.parser.getint('rf', 'RF2_PPM')
+		self.RF2_TCP_PORT = self.parser.getint('rf', 'RF2_TCP_PORT')
+
+		self.INA219_CH0_ENABLE = self.parser.getboolean('status', 'INA219_CH0_ENABLE')
+		self.INA219_CH1_ENABLE = self.parser.getboolean('status', 'INA219_CH1_ENABLE')
+		self.ENABLE_ONEWIRE = self.parser.getboolean('status', 'ENABLE_ONEWIRE')

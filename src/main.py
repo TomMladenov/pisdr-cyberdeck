@@ -31,7 +31,7 @@ from adafruit_ina219 import ADCResolution, BusVoltageRange, INA219, Mode
 
 from datapool import Datapool
 from platform import Platform
-from configuration import *
+
 
 
 upper = 'ABCDEFGHIJKLMNOPQRSTUVWX'
@@ -65,14 +65,7 @@ def is_time_between(begin_time, end_time, check_time=None):
 		return check_time >= begin_time or check_time <= end_time
 
 
-GPIO.setmode(GPIO.BCM)  # set board mode to Broadcom -> this means use GPIO numbers, NOT header pin numbers
-GPIO.setup(AUDIO_PWR_PIN, GPIO.OUT)
-GPIO.setup(GPS_PWR_PIN, GPIO.OUT)
-GPIO.setup(IMU_PWR_PIN, GPIO.OUT)
-GPIO.setup(ALARM_LED_PIN, GPIO.OUT)
 
-I2C_BUS = board.I2C()
-FNULL = open(os.devnull, 'w')
 
 class State(Enum):
 	CONNECTED = 1
@@ -241,7 +234,7 @@ class Main(QMainWindow):
 		self.move(732, 0)
 
 		#---------DATAPOOL----------
-		self.datapool = Datapool()
+		self.datapool = Datapool('config.ini')
 		#---------------------------
 
 		#---------WINDOWS-----------
@@ -253,16 +246,16 @@ class Main(QMainWindow):
 		#---------------------------
 
 
-		self.menuwindow.adsb_combo.addItem(RF1_SER)
-		self.menuwindow.adsb_combo.addItem(RF2_SER)
-		self.menuwindow.acars_combo.addItem(RF1_SER)
-		self.menuwindow.acars_combo.addItem(RF2_SER)
-		self.menuwindow.vdl2_combo.addItem(RF1_SER)
-		self.menuwindow.vdl2_combo.addItem(RF2_SER)
-		self.menuwindow.ais_combo.addItem(RF1_SER)
-		self.menuwindow.ais_combo.addItem(RF2_SER)
-		self.menuwindow.aprs_combo.addItem(RF1_SER)
-		self.menuwindow.aprs_combo.addItem(RF2_SER)
+		self.menuwindow.adsb_combo.addItem(self.datapool.RF1_SER)
+		self.menuwindow.adsb_combo.addItem(self.datapool.RF2_SER)
+		self.menuwindow.acars_combo.addItem(self.datapool.RF1_SER)
+		self.menuwindow.acars_combo.addItem(self.datapool.RF2_SER)
+		self.menuwindow.vdl2_combo.addItem(self.datapool.RF1_SER)
+		self.menuwindow.vdl2_combo.addItem(self.datapool.RF2_SER)
+		self.menuwindow.ais_combo.addItem(self.datapool.RF1_SER)
+		self.menuwindow.ais_combo.addItem(self.datapool.RF2_SER)
+		self.menuwindow.aprs_combo.addItem(self.datapool.RF1_SER)
+		self.menuwindow.aprs_combo.addItem(self.datapool.RF2_SER)
 
 		self.menuwindow.tcprf1_combo_box.addItem('LAN')
 		self.menuwindow.tcprf1_combo_box.addItem('WLAN')
@@ -272,11 +265,11 @@ class Main(QMainWindow):
 
 		self.menuwindow.gqrx_mode_combo.addItem('hf')
 		self.menuwindow.gqrx_mode_combo.addItem('vhf')
-		self.menuwindow.gqrx_dev_combo.addItem(RF1_SER)
-		self.menuwindow.gqrx_dev_combo.addItem(RF2_SER)
+		self.menuwindow.gqrx_dev_combo.addItem(self.datapool.RF1_SER)
+		self.menuwindow.gqrx_dev_combo.addItem(self.datapool.RF2_SER)
 
-		self.menuwindow.rf1_tcp_port_label.setText(str(RF1_TCP_PORT))
-		self.menuwindow.rf2_tcp_port_label.setText(str(RF2_TCP_PORT))
+		self.menuwindow.rf1_tcp_port_label.setText(str(self.datapool.RF1_TCP_PORT))
+		self.menuwindow.rf2_tcp_port_label.setText(str(self.datapool.RF2_TCP_PORT))
 
 		self.platform = Platform(self)
 		vol, muted = self.platform.getCurrentVolume()
@@ -371,7 +364,7 @@ class Main(QMainWindow):
 
 		self.menuwindow.stop_rtltcp_button.pressed.connect(self.platform.stopRtlTcp)
 
-		self.alarm = AlarmIndicator(self)
+		self.alarm = AlarmIndicator(parent=self)
 		self.alarm.alarmHighSignal.connect(self.flashOBCbutton)
 		self.poller = Poller(parent=self)
 		self.powerpoller = TempPowerPoller(parent=self)
@@ -392,11 +385,11 @@ class Main(QMainWindow):
 
 	def startTcpRF1(self):
 		lantype = self.menuwindow.tcprf1_combo_box.currentText()
-		self.platform.startTcpServer(RF1_SER, lantype)
+		self.platform.startTcpServer(self.datapool.RF1_SER, lantype)
 
 	def startTcpRF2(self):
 		lantype = self.menuwindow.tcprf2_combo_box.currentText()
-		self.platform.startTcpServer(RF2_SER, lantype)
+		self.platform.startTcpServer(self.datapool.RF2_SER, lantype)
 
 	def toggleMute(self):
 		status = self.platform.toggleMute()
@@ -869,12 +862,13 @@ class AlarmIndicator(QThread):
 	alarm_active = False
 	alarmHighSignal = pyqtSignal(bool)
 
-	def __init__(self, parent=None):
+	def __init__(self, parent):
 		QThread.__init__(self)
+		self.parent = parent
 
 		self.logger = logging.getLogger('main_logger')
 		self.logger.info('[ALARM] __init__() called')
-		GPIO.output(ALARM_LED_PIN, False)
+		GPIO.output(self.parent.datapool.ALARM_LED_PIN, False)
 
 	def enable(self):
 		self.alarm_active = True
@@ -882,8 +876,8 @@ class AlarmIndicator(QThread):
 
 	def disable(self):
 		self.alarm_active = False
-		if GPIO.input(ALARM_LED_PIN):
-			GPIO.output(ALARM_LED_PIN, False)
+		if GPIO.input(self.parent.datapool.ALARM_LED_PIN):
+			GPIO.output(self.parent.datapool.ALARM_LED_PIN, False)
 			self.alarmHighSignal.emit(False)
 		self.logger.info('[ALARM] disable() called')
 
@@ -891,11 +885,11 @@ class AlarmIndicator(QThread):
 		while True:
 			time.sleep(0.5)
 			if self.alarm_active:
-				GPIO.output(ALARM_LED_PIN, True)
+				GPIO.output(self.parent.datapool.ALARM_LED_PIN, True)
 				self.alarmHighSignal.emit(True)
 			time.sleep(0.5)
 			if self.alarm_active:
-				GPIO.output(ALARM_LED_PIN, False)
+				GPIO.output(self.parent.datapool.ALARM_LED_PIN, False)
 				self.alarmHighSignal.emit(False)
 
 
@@ -925,29 +919,29 @@ class TempPowerPoller(Thread):
 		self.logger.info('[TEMP/PWR] __init__() called')
 		self.parent = parent
 
-		if INA219_CH0_ENABLE:
-			self.ina219_ch0 = INA219(I2C_BUS, addr=int(INA219_ADDR_CH0, 16))
+		if self.parent.datapool.INA219_CH0_ENABLE:
+			self.ina219_ch0 = INA219(self.parent.platform.I2C_BUS, addr=int(self.parent.datapool.INA219_ADDR_CH0, 16))
 			self.ina219_ch0.bus_adc_resolution = ADCResolution.ADCRES_12BIT_32S
 			self.ina219_ch0.shunt_adc_resolution = ADCResolution.ADCRES_12BIT_32S
 			self.ina219_ch0.bus_voltage_range = BusVoltageRange.RANGE_16V
-			self.logger.info('[TEMP/PWR] enable_ina219_ch0=True, INA219 on I2C addr {ADDR}, ADCRES_12BIT_32S, RANGE_16V'.format(ADDR=INA219_ADDR_CH0))
+			self.logger.info('[TEMP/PWR] enable_ina219_ch0=True, INA219 on I2C addr {ADDR}, ADCRES_12BIT_32S, RANGE_16V'.format(ADDR=self.parent.datapool.INA219_ADDR_CH0))
 
-		if INA219_CH1_ENABLE:
-			self.ina219_ch1 = INA219(I2C_BUS, addr=int(INA219_ADDR_CH1, 16))
+		if self.parent.datapool.INA219_CH1_ENABLE:
+			self.ina219_ch1 = INA219(self.parent.platform.I2C_BUS, addr=int(self.parent.datapool.INA219_ADDR_CH1, 16))
 			self.ina219_ch1.bus_adc_resolution = ADCResolution.ADCRES_12BIT_32S
 			self.ina219_ch1.shunt_adc_resolution = ADCResolution.ADCRES_12BIT_32S
 			self.ina219_ch1.bus_voltage_range = BusVoltageRange.RANGE_16V
-			self.logger.info('[TEMP/PWR] enable_ina219_ch1=True, INA219 on I2C addr {ADDR} ADCRES_12BIT_32S, RANGE_16V'.format(ADDR=INA219_ADDR_CH1))
+			self.logger.info('[TEMP/PWR] enable_ina219_ch1=True, INA219 on I2C addr {ADDR} ADCRES_12BIT_32S, RANGE_16V'.format(ADDR=self.parent.datapool.INA219_ADDR_CH1))
 
 	def pollTemperatures(self):
-		if ENABLE_ONEWIRE:
+		if self.parent.datapool.ENABLE_ONEWIRE:
 			try:
-				output = subprocess.check_output(['cat', '/sys/bus/w1/devices/{TEMP_ID}/w1_slave'.format(TEMP_ID=DCDC_TEMP_ID)])
+				output = subprocess.check_output(['cat', '/sys/bus/w1/devices/{TEMP_ID}/w1_slave'.format(TEMP_ID=self.parent.datapool.DCDC_TEMP_ID)])
 				self.parent.datapool.f_temp_dcdc = int(re.findall(r"(?<!\d)\d{5}(?!\d)", output.decode('utf-8'))[0])/1000.0
-				if self.parent.datapool.f_temp_dcdc > T_HIGH_DCDC_ERR:
+				if self.parent.datapool.f_temp_dcdc > self.parent.datapool.T_HIGH_DCDC_ERR:
 					self.parent.datapool.b_temp_dcdc_err = True
 					self.parent.datapool.b_temp_dcdc_warn = False
-				elif self.parent.datapool.f_temp_dcdc > T_HIGH_DCDC_WARN:
+				elif self.parent.datapool.f_temp_dcdc > self.parent.datapool.T_HIGH_DCDC_WARN:
 					self.parent.datapool.b_temp_dcdc_err = False
 					self.parent.datapool.b_temp_dcdc_warn = True
 				else:
@@ -957,12 +951,12 @@ class TempPowerPoller(Thread):
 				self.parent.datapool.f_temp_dcdc = 1000.0
 				self.parent.datapool.b_temp_dcdc_err = True
 			try:
-				output = subprocess.check_output(['cat', '/sys/bus/w1/devices/{TEMP_ID}/w1_slave'.format(TEMP_ID=OBC_TEMP_ID)])
+				output = subprocess.check_output(['cat', '/sys/bus/w1/devices/{TEMP_ID}/w1_slave'.format(TEMP_ID=self.parent.datapool.OBC_TEMP_ID)])
 				self.parent.datapool.f_temp_obc = int(re.findall(r"(?<!\d)\d{5}(?!\d)", output.decode('utf-8'))[0])/1000.0
-				if self.parent.datapool.f_temp_obc > T_HIGH_OBC_ERR:
+				if self.parent.datapool.f_temp_obc > self.parent.datapool.T_HIGH_OBC_ERR:
 					self.parent.datapool.b_temp_obc_err = True
 					self.parent.datapool.b_temp_obc_warn = False
-				elif self.parent.datapool.f_temp_obc > T_HIGH_OBC_WARN:
+				elif self.parent.datapool.f_temp_obc > self.parent.datapool.T_HIGH_OBC_WARN:
 					self.parent.datapool.b_temp_obc_err = False
 					self.parent.datapool.b_temp_obc_warn = True
 				else:
@@ -973,12 +967,12 @@ class TempPowerPoller(Thread):
 				self.parent.datapool.b_temp_obc_err = True
 
 			try:
-				output = subprocess.check_output(['cat', '/sys/bus/w1/devices/{TEMP_ID}/w1_slave'.format(TEMP_ID=BATT_TEMP_ID)])
+				output = subprocess.check_output(['cat', '/sys/bus/w1/devices/{TEMP_ID}/w1_slave'.format(TEMP_ID=self.parent.datapool.BATT_TEMP_ID)])
 				self.parent.datapool.f_temp_batt = int(re.findall(r"(?<!\d)\d{5}(?!\d)", output.decode('utf-8'))[0])/1000.0
-				if self.parent.datapool.f_temp_batt > T_HIGH_BATT_ERR:
+				if self.parent.datapool.f_temp_batt > self.parent.datapool.T_HIGH_BATT_ERR:
 					self.parent.datapool.b_temp_batt_err = True
 					self.parent.datapool.b_temp_batt_warn = False
-				elif self.parent.datapool.f_temp_batt > T_HIGH_BATT_WARN:
+				elif self.parent.datapool.f_temp_batt > self.parent.datapool.T_HIGH_BATT_WARN:
 					self.parent.datapool.b_temp_batt_err = False
 					self.parent.datapool.b_temp_batt_warn = True
 				else:
@@ -992,10 +986,10 @@ class TempPowerPoller(Thread):
 		floats = re.findall("\d+\.\d+", output.decode('utf-8'))
 		f_temp_obc_core = float(floats[0])
 		self.parent.datapool.f_temp_obc_core = f_temp_obc_core
-		if self.parent.datapool.f_temp_obc_core > T_HIGH_OBC_CORE_ERR:
+		if self.parent.datapool.f_temp_obc_core > self.parent.datapool.T_HIGH_OBC_CORE_ERR:
 			self.parent.datapool.b_temp_obc_core_err = True
 			self.parent.datapool.b_temp_obc_core_warn = False
-		elif self.parent.datapool.f_temp_obc_core > T_HIGH_OBC_CORE_WARN:
+		elif self.parent.datapool.f_temp_obc_core > self.parent.datapool.T_HIGH_OBC_CORE_WARN:
 			self.parent.datapool.b_temp_obc_core_err = False
 			self.parent.datapool.b_temp_obc_core_warn = True
 		else:
@@ -1012,13 +1006,13 @@ class TempPowerPoller(Thread):
 			self.parent.alarm.disable()
 
 	def pollPower(self):
-		if INA219_CH0_ENABLE:
+		if self.parent.datapool.INA219_CH0_ENABLE:
 			self.parent.datapool.f_voltage_obc = self.ina219_ch0.bus_voltage  # voltage on V- (load side)
 			self.parent.datapool.f_current_obc = self.ina219_ch0.current/1000.0 # current in mA
 			self.parent.datapool.f_power_obc = self.parent.datapool.f_voltage_obc * self.parent.datapool.f_current_obc
 			self.logger.info('[TEMP/PWR] pollPower() called CH0: {POWER}W ({VOLT}V/{AMPS}A)'.format(POWER=round(self.parent.datapool.f_power_obc, 2), VOLT=round(self.parent.datapool.f_voltage_obc, 2), AMPS=round(self.parent.datapool.f_current_obc, 2)))
 
-		if INA219_CH1_ENABLE:
+		if self.parent.datapool.INA219_CH1_ENABLE:
 			self.parent.datapool.f_voltage_mon = self.ina219_ch1.bus_voltage  # voltage on V- (load side)
 			self.parent.datapool.f_current_mon = self.ina219_ch1.current/1000.0 # current in mA
 			self.parent.datapool.f_power_mon = self.parent.datapool.f_voltage_mon * self.parent.datapool.f_current_mon
@@ -1045,10 +1039,10 @@ class Poller(QThread):
 		self.parent = parent
 
 	def pollGPS(self):
-		self.parent.datapool.b_gps_enabled = GPIO.input(GPS_PWR_PIN)
+		self.parent.datapool.b_gps_enabled = GPIO.input(self.parent.datapool.GPS_PWR_PIN)
 
 	def pollIMU(self):
-		self.parent.datapool.b_imu_enabled = GPIO.input(IMU_PWR_PIN)
+		self.parent.datapool.b_imu_enabled = GPIO.input(self.parent.datapool.IMU_PWR_PIN)
 
 	def pollNetwork(self):
 		output = subprocess.check_output(['ifconfig'])
@@ -1186,8 +1180,8 @@ class Poller(QThread):
 		try:
 			output = subprocess.check_output(('grep', 'rtl_tcp'), stdin=ps.stdout).decode('utf-8').split('\n')
 
-			match_string_RF1 = "rtl_tcp -d {INDEX} -P {PPM}".format(INDEX=self.parent.datapool.i_RF1_index , PPM=RF1_PPM, PORT=RF1_TCP_PORT)
-			match_string_RF2 = "rtl_tcp -d {INDEX} -P {PPM}".format(INDEX=self.parent.datapool.i_RF2_index , PPM=RF2_PPM, PORT=RF2_TCP_PORT)
+			match_string_RF1 = "rtl_tcp -d {INDEX} -P {PPM}".format(INDEX=self.parent.datapool.i_RF1_index , PPM=self.parent.datapool.RF1_PPM, PORT=self.parent.datapool.RF1_TCP_PORT)
+			match_string_RF2 = "rtl_tcp -d {INDEX} -P {PPM}".format(INDEX=self.parent.datapool.i_RF2_index , PPM=self.parent.datapool.RF2_PPM, PORT=self.parent.datapool.RF2_TCP_PORT)
 
 			if match_string_RF1 in ''.join(output):
 				self.parent.datapool.b_status_tcpserver_RF1 = True
@@ -1304,8 +1298,8 @@ if __name__ == '__main__':
 	path = os.path.dirname(os.path.abspath(__file__))
 	now = datetime.datetime.utcnow()
 
-	mainLogger = setup_logger('main_logger', '{PATH}/main_{DATE}.log'.format(PATH=MAIN_LOG_PATH, DATE=now.strftime("%Y%m%d_%H%M%S")), level=logging.INFO)
-	gpsLogger = setup_logger('gps_logger', '{PATH}/gps_{DATE}.log'.format(PATH=GPS_LOG_PATH, DATE=now.strftime("%Y%m%d_%H%M%S")), level=logging.INFO)
+	mainLogger = setup_logger('main_logger', '/home/pi/log/main_{DATE}.log'.format(DATE=now.strftime("%Y%m%d_%H%M%S")), level=logging.INFO)
+	gpsLogger = setup_logger('gps_logger', '/home/pi/log/gps/gps_{DATE}.log'.format(DATE=now.strftime("%Y%m%d_%H%M%S")), level=logging.INFO)
 
 	a = QApplication(sys.argv)
 	app = Main()
