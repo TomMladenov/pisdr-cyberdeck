@@ -1,4 +1,4 @@
 #!/bin/sh
 
-killall xastir
+pkill -F /home/pi/tmp/xastir.pid
 exit 0

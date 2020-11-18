@@ -9,5 +9,7 @@ killall rtl_ais
 killall rtl_udp
 killall fldigi
 killall opencpn
-killall xastir
 killall rtl_tcp
+killall rs41mod
+killall dfm09mod
+killall rtl_fm

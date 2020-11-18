@@ -9,5 +9,5 @@ then
     nohup $(rtl_ais -d $RF_INDEX -p $PPM) > /dev/null &
     exit 0
 else
-    exit -1
+    exit 0
 fi
