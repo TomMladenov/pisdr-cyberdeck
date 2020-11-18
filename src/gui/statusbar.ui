@@ -301,7 +301,7 @@
     <set>Qt::AlignCenter</set>
    </property>
   </widget>
-  <widget class="QLabel" name="tot_power">
+  <widget class="QLabel" name="label_sys_p">
    <property name="geometry">
     <rect>
      <x>460</x>

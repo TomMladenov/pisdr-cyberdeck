@@ -67,7 +67,7 @@ border-radius: 25px;
 background-color: rgb(186, 186, 186);</string>
     </property>
     <property name="text">
-     <string>VOL-</string>
+     <string>VOL -</string>
     </property>
    </widget>
    <widget class="QPushButton" name="volup_button">
@@ -95,7 +95,7 @@ background-color: rgb(186, 186, 186);
 </string>
     </property>
     <property name="text">
-     <string>VOL+</string>
+     <string>VOL +</string>
     </property>
    </widget>
    <widget class="QLabel" name="lon_label">
@@ -160,7 +160,7 @@ border-radius: 25px;
 background-color: rgb(186, 186, 186);</string>
     </property>
     <property name="text">
-     <string>BL-</string>
+     <string>BL -</string>
     </property>
    </widget>
    <widget class="QPushButton" name="toolbar_backlight_up_button">
@@ -187,7 +187,7 @@ border-radius: 25px;
 background-color: rgb(186, 186, 186);</string>
     </property>
     <property name="text">
-     <string>BL+</string>
+     <string>BL +</string>
     </property>
    </widget>
    <widget class="QPushButton" name="audio_button">

@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>105</width>
-    <height>127</height>
+    <width>118</width>
+    <height>197</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -15,23 +15,25 @@
   </property>
   <property name="styleSheet">
    <string notr="true">background-color: rgb(186, 186, 186);
-border: 1px solid black; 
-border-radius: 1px;</string>
+</string>
   </property>
   <widget class="QProgressBar" name="volume_bar">
    <property name="geometry">
     <rect>
-     <x>65</x>
-     <y>15</y>
-     <width>21</width>
-     <height>91</height>
+     <x>75</x>
+     <y>40</y>
+     <width>26</width>
+     <height>131</height>
     </rect>
    </property>
+   <property name="styleSheet">
+    <string notr="true">color: rgb(115, 210, 22);</string>
+   </property>
    <property name="value">
-    <number>24</number>
+    <number>50</number>
    </property>
    <property name="alignment">
-    <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
+    <set>Qt::AlignCenter</set>
    </property>
    <property name="textVisible">
     <bool>false</bool>
@@ -44,25 +46,28 @@ border-radius: 1px;</string>
    </property>
    <property name="textDirection">
     <enum>QProgressBar::TopToBottom</enum>
+   </property>
+   <property name="format">
+    <string notr="true">%p</string>
    </property>
   </widget>
   <widget class="QProgressBar" name="backlight_bar">
    <property name="geometry">
     <rect>
-     <x>15</x>
-     <y>15</y>
-     <width>21</width>
-     <height>91</height>
+     <x>20</x>
+     <y>40</y>
+     <width>26</width>
+     <height>131</height>
     </rect>
    </property>
    <property name="styleSheet">
-    <string notr="true"/>
+    <string notr="true">color: rgb(115, 210, 22);</string>
    </property>
    <property name="value">
-    <number>24</number>
+    <number>50</number>
    </property>
    <property name="alignment">
-    <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
+    <set>Qt::AlignCenter</set>
    </property>
    <property name="textVisible">
     <bool>false</bool>
@@ -75,6 +80,59 @@ border-radius: 1px;</string>
    </property>
    <property name="textDirection">
     <enum>QProgressBar::TopToBottom</enum>
+   </property>
+   <property name="format">
+    <string notr="true">%p</string>
+   </property>
+  </widget>
+  <widget class="QLabel" name="label">
+   <property name="geometry">
+    <rect>
+     <x>65</x>
+     <y>15</y>
+     <width>46</width>
+     <height>17</height>
+    </rect>
+   </property>
+   <property name="font">
+    <font>
+     <pointsize>9</pointsize>
+     <stylestrategy>NoAntialias</stylestrategy>
+    </font>
+   </property>
+   <property name="styleSheet">
+    <string notr="true"/>
+   </property>
+   <property name="text">
+    <string>Volume</string>
+   </property>
+   <property name="alignment">
+    <set>Qt::AlignCenter</set>
+   </property>
+  </widget>
+  <widget class="QLabel" name="label_2">
+   <property name="geometry">
+    <rect>
+     <x>5</x>
+     <y>15</y>
+     <width>51</width>
+     <height>17</height>
+    </rect>
+   </property>
+   <property name="font">
+    <font>
+     <pointsize>9</pointsize>
+     <stylestrategy>NoAntialias</stylestrategy>
+    </font>
+   </property>
+   <property name="styleSheet">
+    <string notr="true"/>
+   </property>
+   <property name="text">
+    <string>Backlight</string>
+   </property>
+   <property name="alignment">
+    <set>Qt::AlignCenter</set>
    </property>
   </widget>
  </widget>
