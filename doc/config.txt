@@ -56,6 +56,7 @@ dtparam=i2c_arm=on
 # Enable audio (loads snd_bcm2835)
 dtparam=audio=on
 
+
 [pi4]
 # Enable DRM VC4 V3D driver on top of the dispmanx display stack
 #dtoverlay=vc4-fkms-v3d
@@ -66,10 +67,27 @@ max_framebuffers=2
 
 lcd_rotate=0
 disable_splash=1
+dtoverlay=pi3-disable-wifi
 dtoverlay=pi3-disable-bt
-dtparam=act_led_trigger=none
-dtparam=act_led_activelow=on
 dtoverlay=w1-gpio
+
+# Disable Ethernet LEDs
+dtparam=eth_led0=14
+dtparam=eth_led1=14
+
+# Disable the PWR LED
+dtparam=pwr_led_trigger=none
+dtparam=pwr_led_activelow=off
+
+# Disable the Activity LED
+dtparam=act_led_trigger=none
+dtparam=act_led_activelow=off
+
+
 gpiopin=4
 enable_uart=1
 gpio=7=pd
+gpio=9=ip,pd
+gpio=10=ip,pd
+
+audio_pwm_mode=2

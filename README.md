@@ -2,8 +2,8 @@
 
 This repository contains the software for the [Raspberry Pi SDR Cyberdeck project](https://hackaday.io/project/174301-raspberry-pi-sdr-cyberdeck)
 
-The purpose of the software is to provide an easy-to-use interface for starting/stopping software of interest as
-wall as a range of monitoring and BITS (Built in self-test) functions.
+The purpose of the software is to provide an easy-to-use interface for starting/stopping software and allow several control clients to connect and
+execute actions and fetch via HTTP methods. The latter is done by using [FastAPI](https://fastapi.tiangolo.com/).
 
 
 ## Setup
@@ -13,57 +13,93 @@ wall as a range of monitoring and BITS (Built in self-test) functions.
 Schematics are available at the dedicated [Hackaday page](https://hackaday.io/project/174301-raspberry-pi-sdr-cyberdeck).
 A minimal setup consists of a raspberry Pi and the 7" Official touch display.
 
+If you will be using 2x RTL-SDRs similar to the original Hackaday project, then it is required to give them both unique serial numbers 'rf1' and 'rf2'.
+```
+rtl_eeprom -d 0 -s 'rf1'
+rtl_eeprom -d 1 -s 'rf2'
+```
+
 ### Software
 
-Install the following software packages on the Raspberry pi via apt-get:
-- GQRX
-- OpenCPN
-- xastir
-- xdotool
-- fldigi
-- wsjtx
-- rtl-sdr
-
-
-Install the following python packages via pip:
-- [PyQt5](https://pypi.org/project/PyQt5/)
-- [rpi-backlight](https://pypi.org/project/rpi-backlight/)
-- [mgrs](https://pypi.org/project/mgrs/)
-- [adafruit-circuitpython-ina219](https://pypi.org/project/adafruit-circuitpython-ina219/)
-
-or use the `requirements.txt` file:
 ```
 pip3 install -r requirements.txt
 ```
 
-Clone the following repositories into `/home/pi/git/` and follow individual installation instructions:
+Clone the following repositories and follow individual installation instructions:
 - [uhubctl](https://github.com/mvp/uhubctl)
 - [dumpvdl2](https://github.com/szpajder/dumpvdl2)
 - [dump1090](https://github.com/antirez/dump1090)
-- [uwave-eas](https://github.com/UWave/uwave-eas)
 - [acarsdec](https://github.com/TLeconte/acarsdec)
 - [rtl-ais](https://github.com/dgiardini/rtl-ais)
 - [rtl-sdr](https://github.com/sysrun/rtl-sdr) (extended version to use a UDP control port and other features)
+- [gpsd-py3](https://github.com/MartijnBraam/gpsd-py3)
 
 
-Add the following entries to `/boot/config.txt`:
+Example Raspberry config file [here](doc/config.txt):
+
+
+Every subsystem is defined by either:
+- device (anything that needs polling over I2C, input pins, etc)
+- process (anything that requires an input device, either RF or alsa)
+- application (anything that has a GUI and does not fall in above 2 classes)
+
+The latter are functionally described in the server [config.ini](src/api/config.ini) file:
+
 ```
-[all]
-lcd_rotate=0
-disable_splash=1
-dtparam=act_led_trigger=none
-dtparam=act_led_activelow=on
-dtoverlay=w1-gpio
-gpiopin=4
-enable_uart=1
-gpio=7=pd
+[battery]
+s_id = battery
+s_name = Battery
+s_type = device
+s_level_i2c_addr = 0x48
+i_level_polling_period = 1
+
+s_temp1_sensor = 28-00000a2efb67
+s_temp2_sensor =  28-00000a2ece8c
+i_temp_polling_period = 5
+
+i_pd_threshold = 3000
+i_capacity = 15600
+i_capacity_wh = 57
+s_model = Anker Powercore
+
+[rtltcp1]
+s_id = rtltcp1
+s_name = RF TCP SERVER 1
+s_type = process
+s_host = 0.0.0.0
+i_port = 5002
+i_freq = 135000000
+i_gain = 48
+i_samprate = 1024000
+s_device = rf1
+b_directsamp = no
+b_bias = no
 ```
 
+To add a subsystem:
+- Add section in the config.ini file
+- Add system in systems.py by subclassing either device, process or application
+- Instantiate it in server.py and link it to the unique INI section
+- Add any additional get/put methods in main.py for the REST API
 
-Add a line to `/etc/xdg/lxsession/LXDE-pi/autostart` for starting application at boot:
+
+### Operations
+
+1) Starting the server locally on the Rpi:
 ```
-@lxpanel --profile LXDE-pi
-@pcmanfm --desktop --profile LXDE-pi
-@xscreensaver -no-splash
-@/usr/bin/python3 /home/pi/git/pisdr-cyberdeck/src/main.py
+cd src/api
+python3 main.py
+```
+The ASGI server runs on 0.0.0.0, and will accept connections on any interface.
+
+
+2) Start one (or several) clients with IP a reachable interface on the Rpi (or 127.0.0.1 for a local conrol client):
+```
+cd src/api
+python3 gui.py -i {YOUR_IP_HERE}
+```
+
+3) A dry-run test can be done from the browser by testing out some HTTP methods at:
+```
+http://{YOUR_IP_HERE}:5000/docs
 ```
