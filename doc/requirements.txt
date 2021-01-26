@@ -1,0 +1,12 @@
+fastapi
+PyQt5
+rpi-backlight
+mgrs
+adafruit-circuitpython-ina219
+aprspy
+alsaaudio
+telnetlib
+Adafruit_ADS1x15
+pyais
+netifaces
+rtlsdr
