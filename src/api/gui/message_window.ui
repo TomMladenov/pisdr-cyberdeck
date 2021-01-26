@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>457</width>
+    <height>128</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Form</string>
+  </property>
+  <property name="styleSheet">
+   <string notr="true">background-color: rgba(186, 186, 186);
+</string>
+  </property>
+  <widget class="QDialogButtonBox" name="dialog_button">
+   <property name="geometry">
+    <rect>
+     <x>150</x>
+     <y>85</y>
+     <width>166</width>
+     <height>25</height>
+    </rect>
+   </property>
+   <property name="standardButtons">
+    <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
+   </property>
+  </widget>
+  <widget class="QTextEdit" name="message_label">
+   <property name="geometry">
+    <rect>
+     <x>25</x>
+     <y>10</y>
+     <width>416</width>
+     <height>66</height>
+    </rect>
+   </property>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
