@@ -2,6 +2,8 @@
 
 This repository contains the software for the [Raspberry Pi SDR Cyberdeck project](https://hackaday.io/project/174301-raspberry-pi-sdr-cyberdeck)
 
+![alt text](./doc/drawings/box_outlined.jpg)
+
 The purpose of the software is to provide an easy-to-use interface for starting/stopping software and allow several control clients to connect and
 execute actions and fetch via HTTP methods. The latter is done by using [FastAPI](https://fastapi.tiangolo.com/).
 
