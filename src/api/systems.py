@@ -22,6 +22,7 @@ import datetime
 from configparser import ConfigParser
 import multiprocessing
 import pyais
+from influxdb import InfluxDBClient
 
 from adafruit_ina219 import ADCResolution, BusVoltageRange, INA219, Mode, Gain
 import board
@@ -50,7 +51,7 @@ class Process():
 	def _init_status(self):
 
 		self.status = 	{
-							"running" : False
+							"running" : 0
 						}
 
 	def _run_executable(self):
@@ -99,7 +100,7 @@ class Process():
 		for command in self.commands:
 			subprocess.run(['pkill -s 9 -f \'{}\''.format(command)], shell=True)
 
-		self.status["running"] = False
+		self.status["running"] = 0
 
 		return {"success": True, "status": self.status}
 
@@ -160,7 +161,7 @@ class Application():
 	def _init_status(self):
 
 		self.status = 	{
-							"running" : False
+							"running" : 0
 						}
 
 		subprocess.run(["../scripts/stop_{}.sh &".format(self.config["s_id"])], shell=True)
@@ -168,12 +169,12 @@ class Application():
 	#This class starts apps via scripts so that additional more complex gui configuration can happen downstream
 	def start_process(self):
 		subprocess.run(["../scripts/start_{}.sh &".format(self.config["s_id"])], shell=True)
-		self.status["running"] = True
+		self.status["running"] = 1
 		return {"success": True, "status": self.status}
 
 	def stop_process(self):
 		subprocess.run(["../scripts/stop_{}.sh &".format(self.config["s_id"])], shell=True)
-		self.status["running"] = False
+		self.status["running"] = 0
 		return {"success": True, "status": self.status}
 
 	def get_status(self):
@@ -237,26 +238,28 @@ class Proxy(Application, Thread):
 	def _init_status(self):
 
 		self.status = 	{
-							"running" : True
+							"running" : 1
 						}
-
 
 	def run(self):
 		self.proxy()
 
 	def proxy(self):
-		self.context = zmq.Context()
+		try:
+			self.context = zmq.Context()
 
-		# Creating subX interface
-		self.subX = self.context.socket(zmq.SUB)
-		self.subX.bind("tcp://127.0.0.1:{}".format(self.config["i_subx_port"]))
+			# Creating subX interface
+			self.subX = self.context.socket(zmq.SUB)
+			self.subX.bind("tcp://127.0.0.1:{}".format(self.config["i_subx_port"]))
 
-		self.subX.setsockopt_string(zmq.SUBSCRIBE, "")
+			self.subX.setsockopt_string(zmq.SUBSCRIBE, "")
 
-		# Creating the pubX interface
-		self.pubX = self.context.socket(zmq.PUB)
-		self.pubX.bind("tcp://0.0.0.0:{}".format(self.config["i_pubx_port"]))
-		zmq.device(zmq.FORWARDER, self.subX, self.pubX)
+			# Creating the pubX interface
+			self.pubX = self.context.socket(zmq.PUB)
+			self.pubX.bind("tcp://0.0.0.0:{}".format(self.config["i_pubx_port"]))
+			zmq.device(zmq.FORWARDER, self.subX, self.pubX)
+		except Exception as e:
+			print("Proxy exited with exception: {}".format(e))
 
 
 	#This class starts apps via scripts so that additional more complex gui configuration can happen downstream
@@ -267,6 +270,9 @@ class Proxy(Application, Thread):
 		return {"success": False, "message": "function not supported for this subsystem"}
 
 	def _shutdown_thread(self):
+		self.subX.close()
+		self.pubX.close()
+		self.context.destroy()
 		self.stop_process()
 
 
@@ -293,42 +299,59 @@ class Subscriber(Application, Thread):
 	def _init_status(self):
 
 		self.status = 	{
-							"running" : False,
-							"packets" : 0
+							"running" : 0
 						}
 
 		if self.config["b_autostart"]:
 			self.start_process()
 
+	def send_to_xastir(self, source, latitude, longitude, altitude, course, symbol_table, symbol_id, path):
+
+		aprs_packet = PositionPacket(	compressed = True, source=source, destination=self.parent.navigation.config["s_xastir_call"], \
+										compression_fix = CompressionFix.CURRENT, compression_source = CompressionSource.GLL, compression_origin = CompressionOrigin.COMPRESSED, \
+										latitude=latitude, longitude=longitude, altitude=int(altitude*3.28084), course=int(course), \
+										ambiguity=0, symbol_table=symbol_table, symbol_id=symbol_id, path=path)
+
+		self.send_UDP_xastir(aprs_packet.generate())
+
+
+	def send_UDP_xastir(self, aprs_string):
+		xastir_string = '{CALL},{PASSCODE}\n{MESSAGE}\n'.format(CALL=self.parent.navigation.config["s_xastir_call"], PASSCODE=self.parent.navigation.config["i_xastir_passcode"], MESSAGE=aprs_string)
+		self.xastir_socket.sendto(xastir_string.encode('utf-8'), (self.parent.navigation.config["s_xastir_ip"], self.parent.navigation.config["i_xastir_port"]))
+
+	def updatePacketCount(self, tag):
+		id = "{s_id}_packets".format(s_id=tag)
+		if id not in self.status:
+			  self.status[id] = 0
+		self.status[id] += 1
 
 	def run(self):
 		while self.alive:
 			while self.status["running"]:
 				try:
 					packet = pickle.loads(self.socket.recv())
-					self.status["packets"] += 1
+
 					print("[{}] Received packet with tag [{}] and payload [{}]".format(packet.utc, packet.tag, packet.payload))
 
 					if packet.tag == "aprs":
-						xastir_packet = '{CALL},{PASSCODE}\n{MESSAGE}\n'.format(CALL='BASE', PASSCODE=25318, MESSAGE=packet.payload[6:])
-						self.xastir_socket.sendto(xastir_packet.encode('utf-8'), ("127.0.0.1", 2023))
-
+						self.send_UDP_xastir(aprs_string=packet.payload[6:])
+						self.updatePacketCount(packet.tag)
 
 					elif packet.tag == "rs1" or packet.tag == "rs2":
 
 						if '{' in packet.payload and '}' in packet.payload: #if received line is in json format
 							line_json = json.loads(packet.payload)
 
-							base_packet = PositionPacket(	compressed = True, source=line_json["type"], destination='BASE', \
-															compression_fix = CompressionFix.CURRENT, compression_source = CompressionSource.GLL, compression_origin = CompressionOrigin.COMPRESSED, \
-															latitude=line_json["lat"], longitude=line_json["lon"], altitude=int(line_json["alt"]*3.28084), course=int(line_json["heading"]), \
-															ambiguity=0, symbol_table='/', symbol_id='O', path='WIDE2-2')
+							self.send_to_xastir(source=line_json["type"], \
+												latitude=line_json["lat"], \
+												longitude=line_json["lon"], \
+												altitude=line_json["alt"], \
+												course=line_json["heading"], \
+												symbol_table='/', \
+												symbol_id='O', \
+												path='WIDE2-2')
 
-							encoded_packet = base_packet.generate()
-							xastir_packet = '{CALL},{PASSCODE}\n{MESSAGE}\n'.format(CALL='BASE', PASSCODE=25318, MESSAGE=encoded_packet)
-
-							#Send to xastir
-							self.xastir_socket.sendto(xastir_packet.encode('utf-8'), ("127.0.0.1", 2023))
+							self.updatePacketCount(packet.tag)
 
 
 					elif packet.tag == "ais":
@@ -337,15 +360,16 @@ class Subscriber(Application, Thread):
 						message = packet.payload
 						aisMessage = json.loads(pyais.AISMessage(pyais.NMEAMessage.from_string(message)).to_json())
 
-						base_packet = PositionPacket(	compressed = True, source=aisMessage["decoded"]["mmsi"], destination='BASE', \
-														compression_fix = CompressionFix.CURRENT, compression_source = CompressionSource.GLL, compression_origin = CompressionOrigin.COMPRESSED, \
-														latitude=aisMessage["decoded"]["lat"], longitude=aisMessage["decoded"]["lon"], altitude=int(1*3.28084), course=int(aisMessage["decoded"]["heading"]), \
-														ambiguity=0, symbol_table='/', symbol_id='Y', path='WIDE2-2')
+						self.send_to_xastir(source=aisMessage["decoded"]["mmsi"], \
+											latitude=aisMessage["decoded"]["lat"], \
+											longitude=aisMessage["decoded"]["lon"], \
+											altitude=1, \
+											course=aisMessage["decoded"]["heading"], \
+											symbol_table='/', \
+											symbol_id='Y', \
+											path='WIDE2-2')
 
-						encoded_packet = base_packet.generate()
-						xastir_packet = '{CALL},{PASSCODE}\n{MESSAGE}\n'.format(CALL='BASE', PASSCODE=25318, MESSAGE=encoded_packet)
-
-						self.xastir_socket.sendto(xastir_packet.encode('utf-8'), ("127.0.0.1", 2023))
+						self.updatePacketCount(packet.tag)
 
 						"""
 						{
@@ -381,23 +405,22 @@ class Subscriber(Application, Thread):
 							}
 						}
 						"""
-
+					self.parent.database.dumpData(id=self.config["s_id"], fields=self.status)
 				except Exception as e:
-					#print(str(e))
 					pass
 
 			time.sleep(1)
 
 	def start_process(self):
 		if not self.status["running"]:
-			self.status["running"] = True
+			self.status["running"] = 1
 			return {"success": True, "status": self.status}
 		else:
 			return {"success": False, "message": "Process is already running"}
 
 	def stop_process(self):
 		if self.status["running"]:
-			self.status["running"] = False
+			self.status["running"] = 0
 			return {"success": True, "status": self.status}
 		else:
 			return {"success": False, "message": "Process is already stopped"}
@@ -411,7 +434,7 @@ class APRS(Process):
 	def _init_status(self):
 
 		self.status = 	{
-							"running" : False,
+							"running" : 0,
 							"i_freq" : self.config["i_freq"],
 							"i_baud" : self.config["i_baud"],
 							"s_device" : self.config["s_device"]
@@ -437,7 +460,7 @@ class APRS(Process):
 		self.commands.append(command2)
 		self.commands.append(command3)
 		self.process = subprocess.Popen("{} | {} | {} > /home/pi/aprsdebug 2>&1 &".format(command1, command2, command3), shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-		self.status["running"] = True
+		self.status["running"] = 1
 
 		return {"success": True, "status": self.status}
 
@@ -448,7 +471,7 @@ class AIS(Process):
 	def _init_status(self):
 
 		self.status = 	{
-							"running" : False,
+							"running" : 0,
 							"i_freq_l" : self.config["i_freq_l"],
 							"i_freq_r" : self.config["i_freq_r"],
 							"s_device" : self.config["s_device"]
@@ -471,7 +494,7 @@ class AIS(Process):
 		self.commands.append(command1)
 		self.commands.append(command2)
 		self.process = subprocess.Popen("{} | {} &".format(command1, command2), shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-		self.status["running"] = True
+		self.status["running"] = 1
 
 		return {"success": True, "status": self.status}
 
@@ -481,7 +504,7 @@ class RTLTCP(Process):
 	def _init_status(self):
 
 		self.status = 	{
-							"running" : False,
+							"running" : 0,
 							"s_host" : self.config["s_host"],
 							"i_port" : self.config["i_port"],
 							"s_device" : self.config["s_device"]
@@ -502,7 +525,7 @@ class RTLTCP(Process):
 
 		self.commands.append(command1)
 		self.process = subprocess.Popen("{} &".format(command1), shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-		self.status["running"] = True
+		self.status["running"] = 1
 
 		return {"success": True, "status": self.status}
 
@@ -512,7 +535,7 @@ class RS(Process):
 	def _init_status(self):
 
 		self.status = 	{
-							"running" : False,
+							"running" : 0,
 							"s_sonde" : self.config["s_sonde"],
 							"i_freq" : self.config["i_freq"],
 							"s_device" : self.config["s_device"]
@@ -553,7 +576,7 @@ class RS(Process):
 		#self.commands.append(command3)
 		self.commands.append(command4)
 		self.process = subprocess.Popen("{} | {} | {} | {} &".format(command1, command2, command3, command4), shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-		self.status["running"] = True
+		self.status["running"] = 1
 
 		return {"success": True, "status": self.status}
 
@@ -563,7 +586,7 @@ class ACARS(Process):
 	def _init_status(self):
 
 		self.status = 	{
-							"running" : False,
+							"running" : 0,
 							"s_device" : self.config["s_device"]
 						}
 
@@ -582,7 +605,7 @@ class ACARS(Process):
 
 		self.commands.append(command1)
 		self.process = subprocess.Popen("{} &".format(command1), shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-		self.status["running"] = True
+		self.status["running"] = 1
 
 		return {"success": True, "status": self.status}
 
@@ -592,7 +615,7 @@ class VDL(Process):
 	def _init_status(self):
 
 		self.status = 	{
-							"running" : False,
+							"running" : 0,
 							"s_device" : self.config["s_device"]
 						}
 
@@ -614,7 +637,7 @@ class VDL(Process):
 		self.commands.append(command1)
 		self.commands.append(command2)
 		self.process = subprocess.Popen("{} | {} &".format(command1, command2), shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-		self.status["running"] = True
+		self.status["running"] = 1
 
 		return {"success": True, "status": self.status}
 
@@ -624,7 +647,7 @@ class ISM(Process):
 	def _init_status(self):
 
 		self.status = 	{
-							"running" : False,
+							"running" : 0,
 							"i_freq" : self.config["i_freq"],
 							"s_device" : self.config["s_device"]
 						}
@@ -646,7 +669,7 @@ class ISM(Process):
 		self.commands.append(command1)
 		#self.commands.append(command2)
 		self.process = subprocess.Popen("{} &".format(command1), shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-		self.status["running"] = True
+		self.status["running"] = 1
 
 		return {"success": True, "status": self.status}
 
@@ -656,7 +679,7 @@ class ADSB(Process):
 	def _init_status(self):
 
 		self.status = 	{
-							"running" : False,
+							"running" : 0,
 							"s_device" : self.config["s_device"]
 						}
 
@@ -676,7 +699,7 @@ class ADSB(Process):
 		self.commands.append(command1)
 		#self.commands.append(command2)
 		self.process = subprocess.Popen("{} &".format(command1, command2), shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-		self.status["running"] = True
+		self.status["running"] = 1
 
 		return {"success": True, "status": self.status}
 
@@ -686,7 +709,7 @@ class GQRX(Process):
 	def _init_status(self):
 
 		self.status = 	{
-							"running" : False,
+							"running" : 0,
 							"i_samprate" : self.config["i_samprate"],
 							"b_directsamp" : self.config["b_directsamp"],
 							"b_bias" : self.config["b_bias"],
@@ -715,7 +738,7 @@ class GQRX(Process):
 			config.write(configfile)
 
 		subprocess.run(["/home/pi/git/pisdr-cyberdeck/src/scripts/start_{}.sh &".format(self.config["s_id"])], shell=True)
-		self.status["running"] = True
+		self.status["running"] = 1
 
 		return {"success": True, "status": self.status}
 
@@ -757,7 +780,7 @@ class GQRX(Process):
 
 	def stop_process(self):
 		subprocess.run(["/home/pi/git/pisdr-cyberdeck/src/scripts/stop_{}.sh &".format(self.config["s_id"])], shell=True)
-		self.status["running"] = False
+		self.status["running"] = 0
 
 		return {"success": True, "status": self.status}
 
@@ -838,11 +861,11 @@ class RigCtl(Application):
 	"""Basic rigctl client implementation. https://github.com/marmelo/gqrx-remote/blob/master/gqrx-remote.py """
 
 	def start_process(self):
-		self.status["running"] = True
+		self.status["running"] = 1
 		return {"success": True, "status": self.status}
 
 	def stop_process(self):
-		self.status["running"] = False
+		self.status["running"] = 0
 		return {"success": True, "status": self.status}
 
 	def _request(self, request):
@@ -958,6 +981,7 @@ class Battery(GenericSystem):
 			total_p = self.parent.obc.status["consumption"] + self.parent.display.status["consumption"]
 			self.status["t_left"] = ((float(self.status["level"])/100.0)*self.config["i_capacity_wh"]) / total_p
 
+			self.parent.database.dumpData(id=self.config["s_id"], fields=self.status)
 
 			time.sleep(1)
 
@@ -974,10 +998,10 @@ class DCDC(GenericSystem):
 
 
 		self.status = 	{
-								"power" : False,
+								"power" : 0,
 								"temp": 0,
-								"j1a_power" : False,
-								"j1b_power" : False
+								"j1a_power" : 0,
+								"j1b_power" : 0
 							}
 
 		self.last_sample_time_temp		= datetime.datetime.utcnow()
@@ -997,14 +1021,15 @@ class DCDC(GenericSystem):
 			if (current_time - self.last_sample_time_sense).seconds >= self.config["i_sense_polling_period"]:
 				self.last_sample_time_sense = current_time
 
-				self.status["j1a_power"] = bool(GPIO.input(self.config["i_j1a_sense_pin"]))
-				self.status["j1b_power"] = bool(GPIO.input(self.config["i_j1b_sense_pin"]))
+				self.status["j1a_power"] = int(GPIO.input(self.config["i_j1a_sense_pin"]))
+				self.status["j1b_power"] = int(GPIO.input(self.config["i_j1b_sense_pin"]))
 
 				if self.status["j1b_power"]:
-					self.status["power"] = True
+					self.status["power"] = 1
 				else:
-					self.status["power"] = False
+					self.status["power"] = 0
 
+			self.parent.database.dumpData(id=self.config["s_id"], fields=self.status)
 			time.sleep(1)
 
 class CustomINA219(INA219):
@@ -1059,8 +1084,8 @@ class CustomINA219(INA219):
 		# Set Config register to take into account the settings above
 		self.bus_voltage_range = BusVoltageRange.RANGE_16V
 		self.gain = Gain.DIV_4_160MV
-		self.bus_adc_resolution = ADCResolution.ADCRES_12BIT_1S
-		self.shunt_adc_resolution = ADCResolution.ADCRES_12BIT_1S
+		self.bus_adc_resolution = ADCResolution.ADCRES_12BIT_4S
+		self.shunt_adc_resolution = ADCResolution.ADCRES_12BIT_4S
 		self.mode = Mode.SANDBVOLT_CONTINUOUS
 
 
@@ -1075,8 +1100,8 @@ class OBC(GenericSystem):
 
 		self.I2C_BUS = board.I2C()
 
-		self.status = {
-							"power": True,
+		self.status = 	{
+							"power": 1,
 							"temp1": 0,
 							"temp2": 0,
 							"voltage" : 0,
@@ -1113,6 +1138,7 @@ class OBC(GenericSystem):
 			self.status["current"] = self.ina219.current/1000.0 # current in mA
 			self.status["consumption"] = self.status["voltage"] * self.status["current"]
 
+			self.parent.database.dumpData(id=self.config["s_id"], fields=self.status)
 			time.sleep(self.config["i_polling_period"])
 
 
@@ -1125,7 +1151,7 @@ class Indicator(GenericSystem):
 		self.config = config
 
 		self.status = 	{
-							"power" : False
+							"power" : 0
 						}
 
 		GPIO.setup(self.config["i_control_pin"], GPIO.OUT)
@@ -1162,11 +1188,11 @@ class Indicator(GenericSystem):
 	def set_power(self, power):
 		if power:
 			self._enable()
-			self.status["power"] = True
+			self.status["power"] = 1
 			return {"success": True, "status": self.status}
 		else:
 			self._disable()
-			self.status["power"] = False
+			self.status["power"] = 0
 			return {"success": True, "status": self.status}
 
 	def run(self):
@@ -1178,6 +1204,7 @@ class Indicator(GenericSystem):
 				GPIO.output(self.config["i_control_pin"], False)
 				time.sleep(self.interval)
 			time.sleep(0.5)
+			self.parent.database.dumpData(id=self.config["s_id"], fields=self.status)
 
 
 
@@ -1189,9 +1216,9 @@ class RF(GenericSystem):
 		self.config = config
 
 		self.status = 	{
-								"rf1_power": False,
+								"rf1_power": 0,
 								"rf1_index": 0,
-								"rf2_power": False,
+								"rf2_power": 0,
 								"rf2_index": 0
 							}
 
@@ -1201,23 +1228,103 @@ class RF(GenericSystem):
 		while self.running:
 			try:
 				self.status["rf1_index"] = self._getDeviceIndex(self.config["s_rf1_serial"])
-				self.status["rf1_power"] = True
+				self.status["rf1_power"] = 1
 			except Exception as e:
 				self.status["rf1_index"] = 0
-				self.status["rf1_power"] = False
+				self.status["rf1_power"] = 0
 
 			try:
 				self.status["rf2_index"] = self._getDeviceIndex(self.config["s_rf2_serial"])
-				self.status["rf2_power"] = True
+				self.status["rf2_power"] = 1
 			except Exception as e:
 				self.status["rf2_index"] = 0
-				self.status["rf2_power"] = False
+				self.status["rf2_power"] = 0
 
+			self.parent.database.dumpData(id=self.config["s_id"], fields=self.status)
 			time.sleep(2)
 
 	def _getDeviceIndex(self, serial):
 		return RtlSdr.get_device_index_by_serial(serial)
 
+class LAN():
+
+	def __init__(self, parent, config):
+		self.parent = parent
+		self.config = config
+
+		self.status = 	{
+							"power" : 0
+						}
+
+		if self.config["b_on_startup"]:
+			self.set_power(True)
+		else:
+			self.set_power(False)
+
+	def set_power(self, power):
+		try:
+			if power:
+				subprocess.run(["sudo uhubctl -l 1-1 -p 1 -a 1"], shell=True)
+				self.status["power"] = 1
+				return {"success": True, "status": self.status}
+			else:
+				subprocess.run(["sudo ifconfig eth0 down"], shell=True)
+				subprocess.run(["sudo uhubctl -l 1-1 -p 1 -a 0"], shell=True)
+				self.status["power"] = 0
+				return {"success": True, "status": self.status}
+			self.parent.database.dumpData(id=self.config["s_id"], fields=self.status)
+
+		except Exception as e:
+			return {"success": False, "message": str(e)}
+
+	def get_status(self):
+		return {"success": True, "status": self.status}
+
+	def get_config(self):
+		return {"success": True, "config": self.config}
+
+	def toggle_power(self):
+		if self.status["power"]:
+			return self.set_power(False)
+		else:
+			return self.set_power(False)
+
+	def set_config(self, key, value):
+		if key == "s_id":
+			return {"success": False, "message": "Modification of s_id is not allowed"}
+		else:
+			if key in self.config:
+				try:
+					type_tag = key[:2]
+					if type_tag == "s_":
+						new_value = value
+						self.config[key] = new_value
+						return {"success": True, "config": self.config}
+					elif type_tag == "f_":
+						new_value = float(value)
+						self.config[key] = new_value
+						return {"success": True, "config": self.config}
+					elif type_tag == "b_":
+						if value.lower() in ["true", "True", "1", "yes", "false", "False", "0", "no"]:
+							new_value = self.parent.str2bool(value.lower())
+							self.config[key] = new_value
+							return {"success": True, "config": self.config}
+						else:
+							return {"success": False, "message": "Value {} not valid boolean".format(value)}
+					elif type_tag == "i_":
+						new_value = int(value)
+						self.config[key] = new_value
+						return {"success": True, "config": self.config}
+					elif type_tag == "l_":
+						new_value = json.loads(value)
+						self.config[key] = new_value
+						return {"success": True, "config": self.config}
+
+				except Exception as e:
+					return {"success": False, "message": "Exception occurred: {}".format(str(e))}
+
+			else:
+				return {"success": False, "message": "Key {} not present in target configuration dict".format(key)}
 
 class USB():
 
@@ -1226,7 +1333,7 @@ class USB():
 		self.config = config
 
 		self.status = 	{
-							"power" : False
+							"power" : 0
 						}
 
 		if self.config["b_on_startup"]:
@@ -1238,12 +1345,13 @@ class USB():
 		try:
 			if power:
 				subprocess.run(["sudo uhubctl -l 1-1 -p 2 -a 1"], shell=True)
-				self.status["power"] = True
+				self.status["power"] = 1
 				return {"success": True, "status": self.status}
 			else:
 				subprocess.run(["sudo uhubctl -l 1-1 -p 2 -a 0"], shell=True)
-				self.status["power"] = False
+				self.status["power"] = 0
 				return {"success": True, "status": self.status}
+			self.parent.database.dumpData(id=self.config["s_id"], fields=self.status)
 
 		except Exception as e:
 			return {"success": False, "message": str(e)}
@@ -1308,10 +1416,10 @@ class Audio():
 		self.mixer = alsaaudio.Mixer(self.config["s_mixer_name"])
 
 		self.status = 	{
-							"power" : False,
+							"power" : 0,
 							"volume": self.mixer.getvolume()[0],
-							"mute": self.mixer.getmute()[0],
-							"test" : False
+							"mute": int(self.mixer.getmute()[0]),
+							"test" : 0
 
 						 }
 
@@ -1359,7 +1467,7 @@ class Audio():
 	def set_mute(self, mute):
 		try:
 			self.mixer.setmute(mute)
-			self.status["mute"] = mute
+			self.status["mute"] = int(mute)
 			return {"success": True, "status": self.status}
 		except Exception as e:
 			return {"success": False, "message": str(e)}
@@ -1375,20 +1483,20 @@ class Audio():
 	def set_test(self, test):
 		if test:
 			subprocess.run(["aplay {} &".format(self.config["s_test_wav"])], shell=True)
-			return {"success": True, "test": True}
+			return {"success": True, "test": 1}
 		else:
 			subprocess.run(["pkill -f {}".format(self.config["s_test_wav"])], shell=True)
-			return {"success": True, "test": False}
-		self.status["test"] = test
+			return {"success": True, "test": 0}
+		self.status["test"] = int(test)
 
 	def set_power(self, power):
 		if power:
 			GPIO.output(self.config["i_control_pin"], True)
-			self.status["power"] = True
+			self.status["power"] = 1
 			return {"success": True, "status": self.status}
 		else:
 			GPIO.output(self.config["i_control_pin"], False)
-			self.status["power"] = False
+			self.status["power"] = 0
 			return {"success": True, "status": self.status}
 
 	def set_config(self, key, value):
@@ -1473,7 +1581,7 @@ class Network(GenericSystem):
 			except Exception as e:
 				self.status["wlan1"] = "NOT AVLBL"
 
-
+			self.parent.database.dumpData(id=self.config["s_id"], fields=self.status)
 			time.sleep(self.config["i_polling_period"])
 
 
@@ -1511,7 +1619,7 @@ class Display(GenericSystem):
 			self.backlight = Backlight()
 			self.backlight.fade_duration = self.config["f_fade_duration"]
 			self.status = {
-								"power": self.backlight.power,
+								"power": int(self.backlight.power),
 								"brightness": self.backlight.brightness,
 								"voltage" : 0,
 								"current" : 0,
@@ -1574,7 +1682,7 @@ class Display(GenericSystem):
 		if self.display_connected:
 			try:
 				self.backlight.power = power
-				self.status["power"] = power
+				self.status["power"] = int(power)
 				return {"success": True, "status": self.status}
 			except Exception as e:
 				return {"success": False, "message": str(e)}
@@ -1585,7 +1693,7 @@ class Display(GenericSystem):
 		if self.display_connected:
 			try:
 				self.backlight.power = not self.status["power"]
-				self.status["power"] = self.backlight.power
+				self.status["power"] = int(self.backlight.power)
 				return {"success": True, "status": self.status}
 			except Exception as e:
 				return {"success": False, "message": str(e)}
@@ -1607,6 +1715,8 @@ class Display(GenericSystem):
 				self.status["voltage"] = self.ina219.bus_voltage  # voltage on V- (load side)
 				self.status["current"] = self.ina219.current/1000.0 # current in mA
 				self.status["consumption"] = self.status["voltage"] * self.status["current"]
+
+			self.parent.database.dumpData(id=self.config["s_id"], fields=self.status)
 			time.sleep(self.config["i_polling_period"])
 
 
@@ -1620,21 +1730,20 @@ class GPS(GenericSystem):
 		self.config = config
 
 		self.status = {
-							"power" : False,
+							"power" : 0,
 							"mode" : 0,
-							"mode_enum" : "",
 							"sats_visible" : 0,
 							"sats_used" : 0,
 							"lat" : 0.0,
 							"lon" : 0.0,
-							"track" : 0,
-							"hspeed" : 0,
+							"track" : 0.0,
+							"hspeed" : 0.0,
 							"time_utc" : "",
-							"error" : 0,
+							#"error" : 0,
 							"mgrs" : "",
 							"grid" : "",
-							"alt" : 0,
-							"climb" : 0
+							"alt" : 0.0,
+							"climb" : 0.0
 
 						 }
 
@@ -1656,7 +1765,7 @@ class GPS(GenericSystem):
 			try:
 				gpsd.connect()
 				self.connected = True
-				self.status["power"] = self.connected
+				self.status["power"] = int(self.connected)
 				return {"success": True, "status": self.status}
 			except Exception as e:
 				print(str(e))
@@ -1665,22 +1774,28 @@ class GPS(GenericSystem):
 			if self.status["power"]:
 				self.connected = False
 				subprocess.run(["../scripts/disable_gps.sh"], shell=True) #Enable GPSD and wake GPS
-				self.status["power"] = self.connected
+				self.status["power"] = int(self.connected)
 				self.status["mode"] = 0
-				self.status["mode_enum"] = "NO MODE"
 				self.status["sats_visible"] = 0
 				self.status["sats_used"] = 0
 				self.status["lat"] = 0.0
 				self.status["lon"] = 0.0
-				self.status["track"] = 0
-				self.status["hspeed"] = 0
+				self.status["track"] = 0.0
+				self.status["hspeed"] = 0.0
 				self.status["time_utc"] = ""
-				self.status["error"] = 0
+
+				self.status["error_c"] = 0.0
+				self.status["error_s"] = 0.0
+				self.status["error_t"] = 0.0
+				self.status["error_v"] = 0.0
+				self.status["error_x"] = 0.0
+				self.status["error_y"] = 0.0
+
 				self.status["mgrs"] = ""
 				self.status["grid"] = ""
-				self.status["alt"] = 0
-				self.status["climb"] = 0
-				self.status["power"]	= self.connected
+				self.status["alt"] = 0.0
+				self.status["climb"] = 0.0
+				self.status["power"] = int(self.connected)
 				return {"success": True, "status": self.status}
 			else:
 				return {"success": False, "message": "GPS is already disabled"}
@@ -1714,35 +1829,46 @@ class GPS(GenericSystem):
 
 				self.packet = gpsd.get_current() #this will continue to loop and grab EACH set of gpsd info to clear the buffer
 				self.status["mode"] = self.packet.mode
-				self.status["mode_enum"] = self.packet.__repr__()
 				self.status["sats_visible"] = self.packet.sats
 				self.status["sats_used"] = self.packet.sats_valid
 
 				if self.status["mode"] == 0:
 
-					self.status["lat"] = 0
-					self.status["lon"] = 0
-					self.status["track"] = 0
-					self.status["hspeed"] = 0
+					self.status["lat"] = 0.0
+					self.status["lon"] = 0.0
+					self.status["track"] = 0.0
+					self.status["hspeed"] = 0.0
 					self.status["time_utc"] = ""
-					self.status["error"] = 0
+
+					self.status["error_c"] = 0.0
+					self.status["error_s"] = 0.0
+					self.status["error_t"] = 0.0
+					self.status["error_v"] = 0.0
+					self.status["error_x"] = 0.0
+					self.status["error_y"] = 0.0
+
 					self.status["mgrs"] = ""
 					self.status["grid"] = ""
-					self.status["alt"] = 0
-					self.status["climb"] = 	0
+					self.status["alt"] = 0.0
+					self.status["climb"] = 	0.0
 
 				elif self.status["mode"] == 1:
 
-					self.status["lat"] = 0
-					self.status["lon"] = 0
-					self.status["track"] = 0
-					self.status["hspeed"] = 0
+					self.status["lat"] = 0.0
+					self.status["lon"] = 0.0
+					self.status["track"] = 0.0
+					self.status["hspeed"] = 0.0
 					self.status["time_utc"] = ""
-					self.status["error"] = 0
+					self.status["error_c"] = 0.0
+					self.status["error_s"] = 0.0
+					self.status["error_t"] = 0.0
+					self.status["error_v"] = 0.0
+					self.status["error_x"] = 0.0
+					self.status["error_y"] = 0.0
 					self.status["mgrs"] = ""
 					self.status["grid"] = ""
-					self.status["alt"] = 0
-					self.status["climb"] = 	0
+					self.status["alt"] = 0.0
+					self.status["climb"] = 	0.0
 
 				elif self.status["mode"] == 2:
 
@@ -1751,11 +1877,18 @@ class GPS(GenericSystem):
 					self.status["track"] = self.packet.track
 					self.status["hspeed"] = self.packet.track
 					self.status["time_utc"] = str(self.packet.time)
-					self.status["error"] = self.packet.error
+
+					self.status["error_c"] = 0.0
+					self.status["error_s"] = 0.0
+					self.status["error_t"] = 0.0
+					self.status["error_v"] = 0.0
+					self.status["error_x"] = 0.0
+					self.status["error_y"] = 0.0
+
 					self.status["mgrs"] = self.m.toMGRS(self.packet.lat, self.packet.lon).decode('utf-8')
 					self.status["grid"] = self.to_grid(self.packet.lat, self.packet.lon)
-					self.status["alt"] = 0
-					self.status["climb"] = 0
+					self.status["alt"] = 0.0
+					self.status["climb"] = 0.0
 
 				elif self.status["mode"] == 3:
 
@@ -1764,12 +1897,86 @@ class GPS(GenericSystem):
 					self.status["track"] = self.packet.track
 					self.status["hspeed"] = self.packet.track
 					self.status["time_utc"] = str(self.packet.time)
-					self.status["error"] = self.packet.error
+
+					self.status["error_c"] = float(self.packet.error["c"])
+					self.status["error_s"] = float(self.packet.error["s"])
+					self.status["error_t"] = float(self.packet.error["t"])
+					self.status["error_v"] = float(self.packet.error["v"])
+					self.status["error_x"] = float(self.packet.error["x"])
+					self.status["error_y"] = float(self.packet.error["y"])
+
 					self.status["mgrs"] = self.m.toMGRS(self.packet.lat, self.packet.lon).decode('utf-8')
 					self.status["grid"] = self.to_grid(self.packet.lat, self.packet.lon)
 					self.status["alt"] = self.packet.alt
 					self.status["climb"] = self.packet.climb
 
-
+				self.parent.database.dumpData(id=self.config["s_id"], fields=self.status)
 				time.sleep(1)
 			time.sleep(0.5)
+
+
+class Database():
+
+	def __init__(self, parent, config):
+		self.parent = parent
+		self.config = config
+
+		self.status = 	{
+							"active" : 1
+						}
+
+		self.dbclient = InfluxDBClient(host=self.config["s_db_host"], port=self.config["i_db_port"], username=self.config["s_db_username"], password=self.config["s_db_password"], database=self.config["s_db_name"])
+
+	def dumpData(self, id, fields):
+		json_body = [{
+						"measurement": id,
+						"time": datetime.datetime.utcnow(),
+						"fields": fields
+					}]
+
+		self.dbclient.write_points(json_body)
+
+
+	def get_status(self):
+		return {"success": True, "status": self.status}
+
+	def get_config(self):
+		return {"success": True, "config": self.config}
+
+
+	def set_config(self, key, value):
+		if key == "s_id":
+			return {"success": False, "message": "Modification of s_id is not allowed"}
+		else:
+			if key in self.config:
+				try:
+					type_tag = key[:2]
+					if type_tag == "s_":
+						new_value = value
+						self.config[key] = new_value
+						return {"success": True, "config": self.config}
+					elif type_tag == "f_":
+						new_value = float(value)
+						self.config[key] = new_value
+						return {"success": True, "config": self.config}
+					elif type_tag == "b_":
+						if value.lower() in ["true", "True", "1", "yes", "false", "False", "0", "no"]:
+							new_value = self.parent.str2bool(value.lower())
+							self.config[key] = new_value
+							return {"success": True, "config": self.config}
+						else:
+							return {"success": False, "message": "Value {} not valid boolean".format(value)}
+					elif type_tag == "i_":
+						new_value = int(value)
+						self.config[key] = new_value
+						return {"success": True, "config": self.config}
+					elif type_tag == "l_":
+						new_value = json.loads(value)
+						self.config[key] = new_value
+						return {"success": True, "config": self.config}
+
+				except Exception as e:
+					return {"success": False, "message": "Exception occurred: {}".format(str(e))}
+
+			else:
+				return {"success": False, "message": "Key {} not present in target configuration dict".format(key)}
