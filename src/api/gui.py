@@ -59,8 +59,6 @@ class DeviceWidget(QWidget):
 
 		self.device = device
 
-		self.powereableDevices = ["gps", "audio", "display", "usb"]
-
 		self.groupbox = QtWidgets.QGroupBox(self.device["config"]["s_id"])
 		self.groupbox.setStyleSheet("font: 9pt \"Noto Sans\";")
 		self.groupbox.setAlignment(Qt.AlignHCenter)
@@ -72,12 +70,16 @@ class DeviceWidget(QWidget):
 			self.device.get("status", {}).pop('hspeed', None)
 			self.device.get("status", {}).pop('climb', None)
 			self.device.get("status", {}).pop('sats_visible', None)
-			self.device.get("status", {}).pop('error', None)
 			self.device.get("status", {}).pop('mgrs', None)
 			self.device.get("status", {}).pop('alt', None)
 			self.device.get("status", {}).pop('sats_used', None)
 			self.device.get("status", {}).pop('mode', None)
 			self.device.get("status", {}).pop('time_utc', None)
+			for key in list(self.device["status"]):
+				if "error" in key:
+					self.device.get("status", {}).pop(key, None)
+
+
 
 
 
@@ -97,7 +99,7 @@ class DeviceWidget(QWidget):
 
 
 
-		if self.device["id"] in self.powereableDevices:
+		if self.device["config"]["b_allow_powerstate"]:
 
 			self.buttonsWidget = QtWidgets.QWidget()
 			self.buttonsWidgetLayout = QtWidgets.QHBoxLayout(self.buttonsWidget)
@@ -186,7 +188,7 @@ class DeviceWidget(QWidget):
 						else:
 							label.setText("ON")
 
-						if self.device["id"] in self.powereableDevices:
+						if self.device["config"]["b_allow_powerstate"]:
 							self.powerbutton.setText("OFF")
 					else:
 						label.setStyleSheet(RED)
@@ -195,7 +197,7 @@ class DeviceWidget(QWidget):
 						else:
 							label.setText("OFF")
 
-						if self.device["id"] in self.powereableDevices:
+						if self.device["config"]["b_allow_powerstate"]:
 							self.powerbutton.setText("ON")
 
 				elif "lat" in key or "lon" in key:
