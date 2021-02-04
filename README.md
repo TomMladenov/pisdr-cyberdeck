@@ -2,7 +2,7 @@
 
 This repository contains the software for the [Raspberry Pi SDR Cyberdeck project](https://hackaday.io/project/174301-raspberry-pi-sdr-cyberdeck)
 
-![alt text](./doc/drawings/box_outlined.jpg)
+![alt text](./doc/img/box_outlined.jpg)
 
 The purpose of the software is to provide an easy-to-use interface for starting/stopping software and allow several control clients to connect and
 execute actions and fetch via HTTP methods. The latter is done by using [FastAPI](https://fastapi.tiangolo.com/).
@@ -15,7 +15,7 @@ execute actions and fetch via HTTP methods. The latter is done by using [FastAPI
 Schematics are available at the dedicated [Hackaday page](https://hackaday.io/project/174301-raspberry-pi-sdr-cyberdeck).
 A minimal setup consists of a raspberry Pi and the 7" Official touch display.
 
-If you will be using 2x RTL-SDRs similar to the original Hackaday project, then it is required to give them both unique serial numbers 'rf1' and 'rf2'.
+If you will be using 2x RTL-SDRs similar to the original Hackaday project, then it is required to give them both unique serial numbers 'rf1' and 'rf2' in order for them to be uniquely identified.
 ```
 rtl_eeprom -d 0 -s 'rf1'
 rtl_eeprom -d 1 -s 'rf2'
@@ -23,8 +23,12 @@ rtl_eeprom -d 1 -s 'rf2'
 
 ### Software
 
+![alt text](./doc/img/logos.png)
+
+The Raspberry Pi SDR cyberdeck runs on a software framework with at it's core an ASGI (Asynchronous Server Gateway Interface), in this case uvicorn. The ASGI interface connects to FastAPI which performs the function invocations in the Python threads which control the Devices, Processes and Applications. This allows for easy system manipulation via HTTP1.1 GET/PUT/POSTS methods. The Python threads controlling the processes can range from a commandline decoder to decode APRS via an audio interface, through to starting a VNC session or starting navigation/mapping software. The intention is to make complex application flow, configuration and control easily accessible via the Cyberdeck API interface (which performs HTTP requests to the server), therefore eliminating local commandline interaction with the system. In parallel system data is dumped to an influxdb database, and exposed via Grafana, allowing easy system monitoring over longer periods of time.
+
 ```
-pip3 install -r requirements.txt
+pip3 install -r doc/requirements.txt
 ```
 
 Clone the following repositories and follow individual installation instructions:
@@ -34,7 +38,6 @@ Clone the following repositories and follow individual installation instructions
 - [acarsdec](https://github.com/TLeconte/acarsdec)
 - [rtl-ais](https://github.com/dgiardini/rtl-ais)
 - [rtl-sdr](https://github.com/sysrun/rtl-sdr) (extended version to use a UDP control port and other features)
-- [gpsd-py3](https://github.com/MartijnBraam/gpsd-py3)
 
 
 Example Raspberry config file [here](doc/config.txt):
@@ -79,10 +82,10 @@ b_bias = no
 ```
 
 To add a subsystem:
-- Add section in the config.ini file
-- Add system in systems.py by subclassing either device, process or application
-- Instantiate it in server.py and link it to the unique INI section
-- Add any additional get/put methods in main.py for the REST API
+- Add section in the [config.ini](src/api/config.ini) file
+- Define the system in [systems.py](src/api/systems.py) by subclassing either device, process or application
+- Instantiate it in [server.py](src/api/server.py) and pass it the unique INI-section
+- Add any additional get/put methods in [main.py](src/api/main.py) for the REST API
 
 
 ### Operations
