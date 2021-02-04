@@ -19,8 +19,10 @@ import time
 import inspect
 
 
-
+#Load server
 server = Server()
+
+#Load API
 api = FastAPI()
 
 def execute_function_subsystem(**kwargs):
@@ -186,6 +188,6 @@ if __name__ == '__main__':
 
 	api.openapi = custom_openapi
 
-	uvicorn.run(api, host="0.0.0.0", port=5000, log_config=log_config, headers=[('Server', 'Remote Cyberdeck')])
+	uvicorn.run(api, host=server.host, port=server.port, log_config=log_config, headers=[('Server', server.s_header_description)])
 	server.stop_threads()
 	sys.exit("Please wait until all systems are stopped...")

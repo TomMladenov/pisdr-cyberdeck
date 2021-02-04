@@ -10,6 +10,8 @@ from threading import Thread
 from configparser import ConfigParser
 import json
 import os
+from influxdb import InfluxDBClient
+import datetime
 
 
 class Server(object):
@@ -20,24 +22,31 @@ class Server(object):
 		self.configurator = ConfigParser()
 		self.configurator.read("/home/pi/git/pisdr-cyberdeck/src/api/config.ini")
 
+		server_config = dict(self.load_config(self.configurator.items("server")))
+
+		self.host = server_config["s_server_host"]
+		self.port = server_config["i_server_port"]
+		self.s_header_description = server_config["s_header_description"]
+
 		GPIO.setmode(GPIO.BCM)
 		self.I2C_BUS = board.I2C()
-
 
 		#devices
 		self.obc = systems.OBC(			self, dict(self.load_config(self.configurator.items("obc"))))
 		self.display = systems.Display(	self, dict(self.load_config(self.configurator.items("display"))))
 		self.battery = systems.Battery(	self, dict(self.load_config(self.configurator.items("battery"))))
 		self.dcdc = systems.DCDC(		self, dict(self.load_config(self.configurator.items("dcdc"))))
-		self.usb = systems.USB(			self, dict(self.load_config(self.configurator.items("usb"))))
-		self.network = systems.Network(	self, dict(self.load_config(self.configurator.items("network"))))
 		self.audio = systems.Audio(		self, dict(self.load_config(self.configurator.items("audio"))))
+		self.usb = systems.USB(			self, dict(self.load_config(self.configurator.items("usb"))))
+		self.lan = systems.LAN(			self, dict(self.load_config(self.configurator.items("lan"))))
+		self.network = systems.Network(	self, dict(self.load_config(self.configurator.items("network"))))
 		self.gps = systems.GPS(			self, dict(self.load_config(self.configurator.items("gps"))))
 		self.rigctl = systems.RigCtl(	self, dict(self.load_config(self.configurator.items("rigctl"))))
 		self.rf = systems.RF(			self, dict(self.load_config(self.configurator.items("rf"))))
 		self.indicator = systems.Indicator(self, dict(self.load_config(self.configurator.items("indicator"))))
 		self.publisher = systems.Publisher(self, dict(self.load_config(self.configurator.items("publisher"))))
 		self.clock = systems.Clock(self, dict(self.load_config(self.configurator.items("clock"))))
+		self.database = systems.Database(self, dict(self.load_config(self.configurator.items("database"))))
 
 		#Processes
 		self.aprs = systems.APRS(self, 		dict(self.load_config(self.configurator.items("aprs"))))
@@ -67,9 +76,10 @@ class Server(object):
 		self.systems.append(self.display)
 		self.systems.append(self.battery)
 		self.systems.append(self.dcdc)
-		self.systems.append(self.usb)
-		self.systems.append(self.network)
 		self.systems.append(self.audio)
+		self.systems.append(self.usb)
+		self.systems.append(self.lan)
+		self.systems.append(self.network)
 		self.systems.append(self.gps)
 		self.systems.append(self.rigctl)
 		self.systems.append(self.rf)
@@ -165,8 +175,6 @@ class Server(object):
 
 	def stop_threads(self):
 		status = [system._shutdown_thread() for system in self.systems if isinstance(system, Thread)]
-		self.proxy.stop_process()
-		self.subscriber.stop_process()
 
 	def shutdown(self):
 		self.stop_threads()
