@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>519</width>
+    <height>293</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Form</string>
+  </property>
+  <property name="styleSheet">
+   <string notr="true">background-color: rgba(186, 186, 186);
+</string>
+  </property>
+  <widget class="QLabel" name="unit_label">
+   <property name="geometry">
+    <rect>
+     <x>10</x>
+     <y>5</y>
+     <width>296</width>
+     <height>17</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>Currently configuring: {}</string>
+   </property>
+  </widget>
+  <widget class="QDialogButtonBox" name="dialog_buttons">
+   <property name="geometry">
+    <rect>
+     <x>100</x>
+     <y>255</y>
+     <width>331</width>
+     <height>26</height>
+    </rect>
+   </property>
+   <property name="standardButtons">
+    <set>QDialogButtonBox::Apply|QDialogButtonBox::Close|QDialogButtonBox::SaveAll</set>
+   </property>
+   <property name="centerButtons">
+    <bool>true</bool>
+   </property>
+  </widget>
+  <widget class="QTableWidget" name="configtable">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>30</y>
+     <width>521</width>
+     <height>216</height>
+    </rect>
+   </property>
+   <property name="sizeAdjustPolicy">
+    <enum>QAbstractScrollArea::AdjustToContents</enum>
+   </property>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

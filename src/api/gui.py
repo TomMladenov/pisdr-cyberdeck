@@ -25,6 +25,7 @@ from enum import Enum
 import json
 import argparse
 from cyberdeck import RemoteCyberdeck
+import copy
 
 buttonStyleIdle = 		"border: 1px solid black; border-radius: 25px; background-color: rgb(186, 186, 186); font: 9pt \"Noto Sans\";"
 buttonStyleClicked = 	"border: 1px solid black; border-radius: 25px; background-color: rgb(0, 255, 0); font: 9pt \"Noto Sans\";"
@@ -73,7 +74,6 @@ class DeviceWidget(QWidget):
 			self.device.get("status", {}).pop('mgrs', None)
 			self.device.get("status", {}).pop('alt', None)
 			self.device.get("status", {}).pop('sats_used', None)
-			self.device.get("status", {}).pop('mode', None)
 			self.device.get("status", {}).pop('time_utc', None)
 			for key in list(self.device["status"]):
 				if "error" in key:
@@ -109,14 +109,14 @@ class DeviceWidget(QWidget):
 			setattr(self, configButton, QtWidgets.QToolButton())
 			self.configbutton = getattr(self, configButton)
 			self.configbutton.setText("Config")
-			self.configbutton.setStyleSheet("border: 1px solid black; border-radius: 25px; background-color: rgb(186, 186, 186); font: 10pt \"Noto Sans\"")
+			self.configbutton.setStyleSheet("border: 1px solid black; border-radius: 25px; background-color: rgb(186, 186, 186); font: 10pt \"Noto Sans\"; min-height: 35 px")
 			self.configbutton.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
 
 			powerButton = "{}_powerbutton_button".format(self.device["id"])
 			setattr(self, powerButton, QtWidgets.QToolButton())
 			self.powerbutton = getattr(self, powerButton)
 			self.powerbutton.setText("START")
-			self.powerbutton.setStyleSheet("border: 1px solid black; border-radius: 25px; background-color: rgb(186, 186, 186); font: 10pt \"Noto Sans\"")
+			self.powerbutton.setStyleSheet("border: 1px solid black; border-radius: 25px; background-color: rgb(186, 186, 186); font: 10pt \"Noto Sans\"; min-height: 35 px")
 			self.powerbutton.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
 
 			self.buttonsWidgetLayout.addWidget(self.configbutton)
@@ -130,7 +130,7 @@ class DeviceWidget(QWidget):
 			self.setLayout(self.vbox2)
 
 			self.powerbutton.pressed.connect(self.powerOnOffDevice)
-			self.configbutton.pressed.connect(lambda: self.parent.changeConfig(self.device))
+			self.configbutton.pressed.connect(lambda: self.parent.configwindow.setConfig(self.device["config"]))
 
 		else:
 
@@ -141,7 +141,7 @@ class DeviceWidget(QWidget):
 			setattr(self, configButton, QtWidgets.QToolButton())
 			self.configbutton = getattr(self, configButton)
 			self.configbutton.setText("Config")
-			self.configbutton.setStyleSheet("border: 1px solid black; border-radius: 25px; background-color: rgb(186, 186, 186); font: 10pt \"Noto Sans\"")
+			self.configbutton.setStyleSheet("border: 1px solid black; border-radius: 25px; background-color: rgb(186, 186, 186); font: 10pt \"Noto Sans\"; min-height: 35 px")
 			self.configbutton.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
 
 			self.buttonsWidgetLayout.addWidget(self.configbutton)
@@ -154,7 +154,7 @@ class DeviceWidget(QWidget):
 			self.vbox2.addWidget(self.buttonsWidget)
 			self.setLayout(self.vbox2)
 
-			self.configbutton.pressed.connect(lambda: self.parent.changeConfig(self.device))
+			self.configbutton.pressed.connect(lambda: self.parent.configwindow.setConfig(self.device["config"]))
 
 	def updateView(self, device):
 
@@ -224,6 +224,17 @@ class DeviceWidget(QWidget):
 						label.setStyleSheet("")
 
 					label.setText("{}: {}".format(key, value))
+				elif key == "mode":
+					label.setAlignment(QtCore.Qt.AlignCenter)
+					if value == 3:
+						label.setText("3D FIX")
+						label.setStyleSheet(GREEN)
+					elif value == 2:
+						label.setText("2D FIX")
+						label.setStyleSheet(ORANGE)
+					elif value == 1 or value == 0:
+						label.setText("NO FIX")
+						label.setStyleSheet(RED)
 				else:
 					label.setText("{} = {}".format(key, value))
 			except Exception as e:
@@ -273,14 +284,14 @@ class ProcessWidget(QWidget):
 		setattr(self, configButton, QtWidgets.QToolButton())
 		self.configbutton = getattr(self, configButton)
 		self.configbutton.setText("Config")
-		self.configbutton.setStyleSheet("border: 1px solid black; border-radius: 25px; background-color: rgb(186, 186, 186); font: 9pt \"Noto Sans\"")
+		self.configbutton.setStyleSheet("border: 1px solid black; border-radius: 25px; background-color: rgb(186, 186, 186); font: 9pt \"Noto Sans\"; min-height: 35 px")
 		self.configbutton.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
 
 		startStopButton = "{}_startstop_button".format(self.process["id"])
 		setattr(self, startStopButton, QtWidgets.QToolButton())
 		self.startstopbutton = getattr(self, startStopButton)
 		self.startstopbutton.setText("START")
-		self.startstopbutton.setStyleSheet("border: 1px solid black; border-radius: 25px; background-color: rgb(186, 186, 186); font: 9pt \"Noto Sans\"")
+		self.startstopbutton.setStyleSheet("border: 1px solid black; border-radius: 25px; background-color: rgb(186, 186, 186); font: 9pt \"Noto Sans\"; min-height: 35 px")
 		self.startstopbutton.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
 
 		self.buttonsWidgetLayout.addWidget(self.configbutton)
@@ -294,6 +305,7 @@ class ProcessWidget(QWidget):
 		self.setLayout(self.vbox2)
 
 		self.startstopbutton.pressed.connect(self.startStopProcess)
+		self.configbutton.pressed.connect(lambda: self.parent.configwindow.setConfig(self.process["config"]))
 
 	def updateView(self, process):
 
@@ -373,14 +385,14 @@ class ApplicationWidget(QWidget):
 		setattr(self, stopButton, QtWidgets.QToolButton())
 		self.stopbutton = getattr(self, stopButton)
 		self.stopbutton.setText("STOP")
-		self.stopbutton.setStyleSheet("border: 1px solid black; border-radius: 25px; background-color: rgb(186, 186, 186); font: 9pt \"Noto Sans\"")
+		self.stopbutton.setStyleSheet("border: 1px solid black; border-radius: 25px; background-color: rgb(186, 186, 186); font: 9pt \"Noto Sans\"; min-height: 35 px")
 		self.stopbutton.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
 
 		startButton = "{}_start_button".format(self.application["id"])
 		setattr(self, startButton, QtWidgets.QToolButton())
 		self.startbutton = getattr(self, startButton)
 		self.startbutton.setText("START")
-		self.startbutton.setStyleSheet("border: 1px solid black; border-radius: 25px; background-color: rgb(186, 186, 186); font: 9pt \"Noto Sans\"")
+		self.startbutton.setStyleSheet("border: 1px solid black; border-radius: 25px; background-color: rgb(186, 186, 186); font: 9pt \"Noto Sans\"; min-height: 35 px")
 		self.startbutton.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
 
 		self.buttonsWidgetLayout.addWidget(self.stopbutton)
@@ -526,6 +538,147 @@ class TableModel(QAbstractTableModel):
 		return self._header[section]
 
 
+class ConfigWindow(QWidget):
+
+	def __init__(self, parent):
+		super(ConfigWindow, self).__init__(None)
+		self.parent = parent
+		gui = path + '/gui/config_window.ui'
+		loadUi(gui, self)
+
+		self.setWindowTitle("Configuration Window")
+
+		vheader = self.configtable.verticalHeader()
+		vheader.setVisible(False)
+
+		hheader = self.configtable.horizontalHeader()
+		self.configtable.setHorizontalHeaderLabels(["key", "value"])
+
+		self.configtable.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.AdjustToContents)
+		self.configtable.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+
+		self.setFixedSize(self.size())
+		self.move(130, 130)
+		self.hide()
+
+		self.dialog_buttons.clicked.connect(self.dialogHandler)
+
+
+	def updateLocalConfig(self, key, value):
+		self.localConfig[key] = value
+
+	def dialogHandler(self, button):
+		sb = self.dialog_buttons.standardButton(button)
+		if sb == QtWidgets.QDialogButtonBox.Apply:
+			self.applyCurrentSettings()
+		elif sb == QtWidgets.QDialogButtonBox.SaveAll:
+			self.applyCurrentSettings()
+			self.hide()
+		elif sb == QtWidgets.QDialogButtonBox.Close:
+			self.hide()
+		else:
+			pass
+
+	def applyCurrentSettings(self):
+		#Iterate over the widgets, and update the local copy of the remote configuration
+		for i in range(0, len(self.remoteConfig)):
+			item = self.configtable.item(i, 1)
+			if item == None:
+				item = self.configtable.cellWidget(i, 1)
+			key = self.configtable.item(i, 0).text()
+
+			type_tag = key[:2]
+			if type_tag == "s_":
+				if "device" in key:
+					self.updateLocalConfig(key, item.currentText()) #Combobox
+				else:
+					self.updateLocalConfig(key, item.text()) #Normal str
+
+			elif type_tag == "f_" or type_tag == "i_":
+				self.updateLocalConfig(key, item.value())
+
+			elif type_tag == "b_":
+				if item.checkState() == QtCore.Qt.Checked:
+					self.updateLocalConfig(key, 1)
+				else:
+					self.updateLocalConfig(key, 0)
+
+			else:
+				pass
+
+		#Now that the local configuration has been updated with the GUI changes, compare local to remote config and update differences
+		for key in self.localConfig:
+			if self.remoteConfig[key] != self.localConfig[key]:
+				print("Requesting update KEY:{} REMOTE:{} LOCAL:{}".format(key, self.remoteConfig[key], self.localConfig[key]))
+				response = self.parent.cyberdeck.set_config(self.remoteConfig["s_id"], key, self.localConfig[key])
+				if response["success"]:
+					self.remoteConfig = response["config"]
+
+
+	def setConfig(self, config):
+		self.remoteConfig = config
+		self.localConfig = copy.copy(config) # Local configuration is initially a copy of the remote
+		self.configtable.clearContents()
+
+		self.unit_label.setText("Currently configuring: {}".format(self.remoteConfig["s_id"]))
+		self.configtable.setRowCount(len(self.remoteConfig))
+		self.configtable.setColumnCount(2)
+
+		i = 0
+		for key in self.remoteConfig:
+			self.configtable.setItem(i, 0, QTableWidgetItem(key))
+			type_tag = key[:2]
+			if type_tag == "s_":
+				if key == "s_device":
+					comboBox = QtWidgets.QComboBox()
+					comboBox.addItem("rf1")
+					comboBox.addItem("rf2")
+					comboBox.addItem("alsa")
+					index = comboBox.findText(self.remoteConfig[key])
+					comboBox.setCurrentIndex(index)
+					self.configtable.setCellWidget(i, 1, comboBox)
+
+
+				else:
+					tableItem = QTableWidgetItem(str(self.remoteConfig[key]))
+					self.configtable.setItem(i, 1, tableItem)
+
+			elif type_tag == "f_":
+				floatEdit = QtWidgets.QDoubleSpinBox()
+				floatEdit.setMaximum(50000.0)
+				floatEdit.setMinimum(0.0)
+				floatEdit.setSingleStep(0.01)
+				floatEdit.setValue(self.remoteConfig[key])
+				self.configtable.setCellWidget(i, 1, floatEdit)
+
+			elif type_tag == "b_":
+				tableItem = QTableWidgetItem()
+				tableItem.setFlags(QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled)
+				if self.remoteConfig[key]:
+					tableItem.setCheckState(QtCore.Qt.Checked)
+				else:
+					tableItem.setCheckState(QtCore.Qt.Unchecked)
+				self.configtable.setItem(i, 1, tableItem)
+
+			elif type_tag == "i_":
+				intEdit = QtWidgets.QSpinBox()
+				intEdit.setMaximum(2147483647)
+				intEdit.setValue(self.remoteConfig[key])
+				self.configtable.setCellWidget(i, 1, intEdit)
+
+			elif type_tag == "l_":
+				tableItem = QTableWidgetItem(str(self.remoteConfig[key]))
+
+
+			i = i + 1
+
+		self.popup()
+
+	def popup(self):
+		self.show()
+		self.showMaximized()
+		self.activateWindow()
+
 
 class MessageWindow(QWidget):
 
@@ -535,7 +688,7 @@ class MessageWindow(QWidget):
 		loadUi(gui, self)
 
 		self.setFixedSize(self.size())
-		self.setWindowFlags(Qt.FramelessWindowHint)
+		self.setWindowTitle("Message Window")
 		self.move(180, 180)
 		self.hide()
 
@@ -547,6 +700,7 @@ class MessageWindow(QWidget):
 
 	def popup(self):
 		self.show()
+		self.showMaximized()
 		self.activateWindow()
 
 
@@ -581,8 +735,6 @@ class Main(QMainWindow):
 		self.deviceWidgets = []
 		self.processWidgets = []
 
-
-
 		self.cyberdeck = RemoteCyberdeck(ip, 5000, 5001)
 		self.cyberdeck.start()
 
@@ -594,6 +746,7 @@ class Main(QMainWindow):
 		#---------WINDOWS-----------
 		self.statusbar = Statusbar()
 		self.messagewindow = MessageWindow()
+		self.configwindow = ConfigWindow(self)
 		self.menuwindow = MenuWindow()
 		self.menuwindow.setFocusPolicy(QtCore.Qt.StrongFocus)
 		self.barmenu = Barmenu()
@@ -725,8 +878,8 @@ class Main(QMainWindow):
 					except Exception as e:
 						pass
 
-			rows = 2
-			columns = 5
+			rows = 3
+			columns = 6
 			mylist = [[0 for x in range(columns)] for x in range(rows)]
 			k = 0
 			for i in range(rows):
@@ -771,7 +924,8 @@ class Main(QMainWindow):
 					widget.updateView(item)
 
 			except Exception as e:
-				print(str(e))
+				pass
+				#print(str(e))
 
 
 
@@ -843,6 +997,7 @@ class Main(QMainWindow):
 	def exitApplication(self):
 		self.statusbar.close()
 		self.menuwindow.close()
+		self.configwindow.close()
 		self.barmenu.close()
 		self.close()
 
