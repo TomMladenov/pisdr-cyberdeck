@@ -3,7 +3,6 @@
 ps -e | grep " fldigi"
 if [ $? -ne 0 ]
 then
-		export DISPLAY=:0
 		nohup fldigi -g 729x445+0+28 > /dev/null &
 else
 		$(xdotool windowactivate $(xdotool search --name 'fldigi'))

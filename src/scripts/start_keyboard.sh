@@ -1,7 +1,5 @@
 #!/bin/sh
 
-export DISPLAY=:0
-
 ps -e | grep " match"
 if [ $? -ne 0 ]
 then

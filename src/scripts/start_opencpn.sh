@@ -1,6 +1,5 @@
 #!/bin/sh
 
-export DISPLAY=:0
 ps -e | grep " opencpn"
 if [ $? -ne 0 ]
 then

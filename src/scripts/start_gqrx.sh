@@ -1,6 +1,5 @@
 #!/bin/sh
 
-export DISPLAY=:0
 ps -e | grep " gqrx"
 if [ $? -ne 0 ]
 then

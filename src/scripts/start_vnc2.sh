@@ -1,4 +1,4 @@
 #!/bin/sh
 
-vncserver :2  &>/dev/null
+vncserver :2 -name "REMOTE SESSION 2" -dpi 96 &>/dev/null
 exit 0
