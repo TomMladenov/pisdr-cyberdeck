@@ -12,6 +12,7 @@ import json
 import os
 from influxdb import InfluxDBClient
 import datetime
+import time
 
 
 class Server(object):
@@ -39,7 +40,8 @@ class Server(object):
 		self.audio = systems.Audio(		self, dict(self.load_config(self.configurator.items("audio"))))
 		self.usb = systems.USB(			self, dict(self.load_config(self.configurator.items("usb"))))
 		self.lan = systems.LAN(			self, dict(self.load_config(self.configurator.items("lan"))))
-		self.network = systems.Network(	self, dict(self.load_config(self.configurator.items("network"))))
+		self.wlan = systems.WLAN(		self, dict(self.load_config(self.configurator.items("wlan"))))
+		self.bluetooth = systems.Bluetooth(		self, dict(self.load_config(self.configurator.items("bluetooth"))))
 		self.gps = systems.GPS(			self, dict(self.load_config(self.configurator.items("gps"))))
 		self.rigctl = systems.RigCtl(	self, dict(self.load_config(self.configurator.items("rigctl"))))
 		self.rf = systems.RF(			self, dict(self.load_config(self.configurator.items("rf"))))
@@ -67,7 +69,7 @@ class Server(object):
 		self.fldigi = 		systems.Application(self, dict(self.load_config(self.configurator.items("fldigi"))))
 		self.keyboard = 	systems.Application(self, dict(self.load_config(self.configurator.items("keyboard"))))
 		self.navigation = 	systems.Application(self, dict(self.load_config(self.configurator.items("navigation"))))
-		self.gpredict = 	systems.Application(self, dict(self.load_config(self.configurator.items("gpredict"))))
+		self.gpredict = 	systems.Gpredict(self, dict(self.load_config(self.configurator.items("gpredict"))))
 		self.vnc1 = 	systems.Application(self, dict(self.load_config(self.configurator.items("vnc1"))))
 		self.vnc2 = 	systems.Application(self, dict(self.load_config(self.configurator.items("vnc2"))))
 
@@ -79,7 +81,8 @@ class Server(object):
 		self.systems.append(self.audio)
 		self.systems.append(self.usb)
 		self.systems.append(self.lan)
-		self.systems.append(self.network)
+		self.systems.append(self.wlan)
+		self.systems.append(self.bluetooth)
 		self.systems.append(self.gps)
 		self.systems.append(self.rigctl)
 		self.systems.append(self.rf)
@@ -110,7 +113,12 @@ class Server(object):
 		self.systems.append(self.vnc2)
 
 		#Start threads
-		status = [system.start() for system in self.systems if isinstance(system, Thread)]
+		# = [system.start() for system in self.systems if isinstance(system, Thread)]
+
+		for system in self.systems:
+			if isinstance(system, Thread):
+				system.start()
+				time.sleep(1)
 
 
 	def str2bool(self, v):
