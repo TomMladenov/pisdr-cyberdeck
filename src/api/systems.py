@@ -13,6 +13,7 @@ import socket
 import gpsd
 import mgrs
 import zmq
+import sys
 from threading import Thread
 import logging
 import re
@@ -121,26 +122,38 @@ class Process():
 					if type_tag == "s_":
 						new_value = value
 						self.config[key] = new_value
+						if key in self.status:
+							self.status[key] = self.config[key]
 						return {"success": True, "config": self.config}
 					elif type_tag == "f_":
 						new_value = float(value)
 						self.config[key] = new_value
+						if key in self.status:
+							self.status[key] = self.config[key]
 						return {"success": True, "config": self.config}
 					elif type_tag == "b_":
 						if value.lower() in ["true", "True", "1", "yes", "false", "False", "0", "no"]:
-							new_value = self.parent.str2bool(value.lower())
+							new_value = int(self.parent.str2bool(value.lower()))
 							self.config[key] = new_value
+							if key in self.status:
+								self.status[key] = self.config[key]
 							return {"success": True, "config": self.config}
 						else:
 							return {"success": False, "message": "Value {} not valid boolean".format(value)}
 					elif type_tag == "i_":
 						new_value = int(value)
 						self.config[key] = new_value
+						if key in self.status:
+							self.status[key] = self.config[key]
 						return {"success": True, "config": self.config}
 					elif type_tag == "l_":
 						new_value = json.loads(value)
 						self.config[key] = new_value
+						if key in self.status:
+							self.status[key] = self.config[key]
 						return {"success": True, "config": self.config}
+
+
 
 				except Exception as e:
 					return {"success": False, "message": "Exception occurred: {}".format(str(e))}
@@ -166,7 +179,7 @@ class Application():
 
 		subprocess.run(["../scripts/stop_{}.sh &".format(self.config["s_id"])], shell=True)
 
-	#This class starts apps via scripts so that additional more complex gui configuration can happen downstream
+	#This class starts apps via scripts so that additional more complex gui (via e.g. xdotool) configuration can happen downstream
 	def start_process(self):
 		subprocess.run(["../scripts/start_{}.sh &".format(self.config["s_id"])], shell=True)
 		self.status["running"] = 1
@@ -205,7 +218,7 @@ class Application():
 						return {"success": True, "config": self.config}
 					elif type_tag == "b_":
 						if value.lower() in ["true", "True", "1", "yes", "false", "False", "0", "no"]:
-							new_value = self.parent.str2bool(value.lower())
+							new_value = int(self.parent.str2bool(value.lower()))
 							self.config[key] = new_value
 							return {"success": True, "config": self.config}
 						else:
@@ -226,12 +239,52 @@ class Application():
 				return {"success": False, "message": "Key {} not present in target configuration dict".format(key)}
 
 
+class Gpredict(Application):
+
+	def start_process(self):
+
+		gpredict_config = ConfigParser()
+		gpredict_config.optionxform = str
+		gpredict_config.read(self.config["s_location_file"])
+
+		if self.parent.gps.status["mode"] == 3 and self.config["b_use_gps_onfix"]:
+			gpredict_config["QTH"]["DESCRIPTION"] = "GPS"
+			gpredict_config["QTH"]["LOCATION"] = "{} location [N{} E{}] alt. {}m, grid. {}".format("GPS", 	round(self.parent.gps.status["lat"], 3),\
+																											round(self.parent.gps.status["lon"], 3),\
+																											int(self.parent.gps.status["alt"]),\
+																											self.parent.gps.status["grid"])
+			gpredict_config["QTH"]["LAT"] = str(self.parent.gps.status["lat"])
+			gpredict_config["QTH"]["LON"] = str(self.parent.gps.status["lon"])
+			gpredict_config["QTH"]["ALT"] = str(int(self.parent.gps.status["alt"]))
+
+		else:
+			gpredict_config["QTH"]["DESCRIPTION"] = self.config["s_default_name"]
+			gpredict_config["QTH"]["LOCATION"] = "{} FIXED location [N{} E{}] alt. {}m, grid. {}".format(self.config["s_default_name"], \
+																										self.config["f_default_lat"],\
+																										self.config["f_default_lon"],\
+																										self.config["f_default_alt"],\
+																										self.config["s_default_grid"])
+			gpredict_config["QTH"]["LAT"] = str(self.config["f_default_lat"])
+			gpredict_config["QTH"]["LON"] = str(self.config["f_default_lon"])
+			gpredict_config["QTH"]["ALT"] = str(int(self.config["f_default_alt"]))
+
+
+		with open(self.config["s_location_file"], 'w') as configfile:
+			gpredict_config.write(configfile)
+
+		subprocess.run(["../scripts/start_{}.sh &".format(self.config["s_id"])], shell=True)
+		self.status["running"] = 1
+		return {"success": True, "status": self.status}
+
+
+
 class Proxy(Application, Thread):
 
 	def __init__(self, parent, config):
 		Thread.__init__(self)
 		self.parent = parent
 		self.config = config
+		self.name = self.config["s_id"]
 
 		self._init_status()
 
@@ -283,6 +336,7 @@ class Subscriber(Application, Thread):
 		self.parent = parent
 		self.config = config
 		self.alive = True
+		self.name = self.config["s_id"]		
 
 		self.xastir_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
@@ -794,6 +848,7 @@ class GenericSystem(Thread):
 		Thread.__init__(self)
 		self.parent = parent
 		self.config = config
+		self.name = self.config["s_id"]		
 
 		self.status = {}
 		self.running = True
@@ -802,7 +857,7 @@ class GenericSystem(Thread):
 		try:
 			output = subprocess.check_output(['cat', '/sys/bus/w1/devices/{TEMP_ID}/temperature'.format(TEMP_ID=ID)])
 			return int(output.decode('utf-8'))/1000.0, True
-		except Exception as e:
+		except Exception:
 			return 0.0, False
 
 	def get_status(self):
@@ -835,7 +890,7 @@ class GenericSystem(Thread):
 						return {"success": True, "config": self.config}
 					elif type_tag == "b_":
 						if value.lower() in ["true", "True", "1", "yes", "false", "False", "0", "no"]:
-							new_value = self.parent.str2bool(value.lower())
+							new_value = int(self.parent.str2bool(value.lower()))
 							self.config[key] = new_value
 							return {"success": True, "config": self.config}
 						else:
@@ -901,6 +956,7 @@ class Publisher(GenericSystem):
 		Thread.__init__(self)
 		self.parent = parent
 		self.config = config
+		self.name = self.config["s_id"]		
 
 		self.status = {}
 
@@ -926,29 +982,69 @@ class Battery(GenericSystem):
 		Thread.__init__(self)
 		self.parent = parent
 		self.config = config
+		self.name = self.config["s_id"]
 
 		self.status = 	{
 							"charge_state" : "",
 							"level": 0,
-							"temp1": 0,
-							"temp2" : 0,
-							"t_left" : 0
+							"temp1": 0.0,
+							"temp2" : 0.0,
+							"t_left" : 0.0
 						}
 
 
 		self.battadc = Adafruit_ADS1x15.ADS1115(address=int(self.config["s_level_i2c_addr"], 16))
 
-		self.last_sample_time_temp 		= datetime.datetime.utcnow()
-		self.last_sample_time_level		= datetime.datetime.utcnow()
-		self.last_sample_time_charge	= datetime.datetime.utcnow()
-
 		self.running = True
+
+	def getLevel(self):
+		raw_readings = [0] * 4
+		raw_readings[0] = self.battadc.read_adc(0, gain=1)
+		raw_readings[1] = self.battadc.read_adc(1, gain=1)
+		raw_readings[2] = self.battadc.read_adc(2, gain=1)
+		raw_readings[3] = self.battadc.read_adc(3, gain=1)
+
+		readings = [25 if r >= self.config["i_pd_threshold"] else 0 for r in raw_readings]
+		level = sum(readings)
+
+		return level
+
+	def checkBattState(self):
+
+		#Take 4 readings and use samples to determine battery state
+		levels = []
+		for i in range (1, 5):
+			level = self.getLevel()
+			levels.append(level)
+			time.sleep(1)
+
+		if sum(levels) == 0:
+			self.status["charge_state"] = "IDLE"
+			self.status["level"] = 0
+			self.status["t_left"] = 0.0
+
+		elif all(l == levels[0] for l in levels):
+			self.status["charge_state"] = "DISCHARGING"
+			self.status["level"] = levels[0]
+			total_p = self.parent.obc.status["consumption"] + self.parent.display.status["consumption"]
+			self.status["t_left"] = ((float(self.status["level"])/100.0)*self.config["i_capacity_wh"]) / total_p
+
+		else:
+			self.status["charge_state"] = "CHARGING"
+			self.status["level"] = int((max(levels) + min(levels))/2)
+
+			capacity_left = (1-(float(self.status["level"])/100.0))*self.config["i_capacity"]
+			self.status["t_left"] = float(capacity_left/2000.0) #Charging at 5V 2A
+
+		#print("Battery state is {}".format(self.status["charge_state"]))
+		#print("Battery level is {}".format(self.status["level"]))
+
 
 	def run(self):
 		while self.running:
-			current_time = datetime.datetime.utcnow()
-			if (current_time - self.last_sample_time_temp).seconds >= self.config["i_temp_polling_period"]:
-				self.last_sample_time_temp = current_time
+			try:
+
+				self.checkBattState()
 
 				temp1, valid = self._getTemperatureDS18B20(self.config["s_temp1_sensor"])
 				if valid:
@@ -958,32 +1054,11 @@ class Battery(GenericSystem):
 				if valid:
 					self.status["temp2"] = temp2
 
+				self.parent.database.dumpData(id=self.config["s_id"], fields=self.status)
+				time.sleep(self.config["i_batt_poll_period"])
 
-			if (current_time - self.last_sample_time_level).seconds >= self.config["i_level_polling_period"]:
-				self.last_sample_time_level = current_time
-
-				raw_readings = [0] * 4
-				raw_readings[0] = self.battadc.read_adc(0, gain=1)
-				raw_readings[1] = self.battadc.read_adc(1, gain=1)
-				raw_readings[2] = self.battadc.read_adc(2, gain=1)
-				raw_readings[3] = self.battadc.read_adc(3, gain=1)
-
-				readings = [25 if r >= self.config["i_pd_threshold"] else 0 for r in raw_readings]
-				level = sum(readings)
-
-				self.status["level"] = level
-
-				if self.status["level"] == 0:
-					self.status["charge_state"] = "IDLE"
-				else:
-					self.status["charge_state"] = "(DIS)CHARGING"
-
-			total_p = self.parent.obc.status["consumption"] + self.parent.display.status["consumption"]
-			self.status["t_left"] = ((float(self.status["level"])/100.0)*self.config["i_capacity_wh"]) / total_p
-
-			self.parent.database.dumpData(id=self.config["s_id"], fields=self.status)
-
-			time.sleep(1)
+			except Exception as e:
+				print(str(e))
 
 
 class DCDC(GenericSystem):
@@ -992,6 +1067,7 @@ class DCDC(GenericSystem):
 		Thread.__init__(self)
 		self.parent = parent
 		self.config = config
+		self.name = self.config["s_id"]		
 
 		GPIO.setup(self.config["i_j1a_sense_pin"], GPIO.IN)
 		GPIO.setup(self.config["i_j1b_sense_pin"], GPIO.IN)
@@ -1002,35 +1078,28 @@ class DCDC(GenericSystem):
 								"temp": 0,
 								"j1a_power" : 0,
 								"j1b_power" : 0
-							}
-
-		self.last_sample_time_temp		= datetime.datetime.utcnow()
-		self.last_sample_time_sense		= datetime.datetime.utcnow()
+						}
 
 		self.running = True
 
 	def run(self):
 		while self.running:
-			current_time = datetime.datetime.utcnow()
-			if (current_time - self.last_sample_time_temp).seconds >= self.config["i_temp_polling_period"]:
-				self.last_sample_time_temp = current_time
-				temp, valid = self._getTemperatureDS18B20(self.config["s_temp_sensor"])
-				if valid:
-					self.status["temp"] = temp
+			temp, valid = self._getTemperatureDS18B20(self.config["s_temp_sensor"])
+			if valid:
+				self.status["temp"] = temp
 
-			if (current_time - self.last_sample_time_sense).seconds >= self.config["i_sense_polling_period"]:
-				self.last_sample_time_sense = current_time
+			self.status["j1a_power"] = int(GPIO.input(self.config["i_j1a_sense_pin"]))
+			self.status["j1b_power"] = int(GPIO.input(self.config["i_j1b_sense_pin"]))
 
-				self.status["j1a_power"] = int(GPIO.input(self.config["i_j1a_sense_pin"]))
-				self.status["j1b_power"] = int(GPIO.input(self.config["i_j1b_sense_pin"]))
-
-				if self.status["j1b_power"]:
-					self.status["power"] = 1
-				else:
-					self.status["power"] = 0
+			if self.status["j1b_power"]:
+				self.status["power"] = 1
+			else:
+				self.status["power"] = 0
 
 			self.parent.database.dumpData(id=self.config["s_id"], fields=self.status)
-			time.sleep(1)
+			time.sleep(self.config["i_polling_period"])
+			
+
 
 class CustomINA219(INA219):
 
@@ -1095,6 +1164,7 @@ class OBC(GenericSystem):
 		Thread.__init__(self)
 		self.parent = parent
 		self.config = config
+		self.name = self.config["s_id"]		
 
 		self.running = True
 
@@ -1149,6 +1219,7 @@ class Indicator(GenericSystem):
 		Thread.__init__(self)
 		self.parent = parent
 		self.config = config
+		self.name = self.config["s_id"]		
 
 		self.status = 	{
 							"power" : 0
@@ -1204,7 +1275,7 @@ class Indicator(GenericSystem):
 				GPIO.output(self.config["i_control_pin"], False)
 				time.sleep(self.interval)
 			time.sleep(0.5)
-			self.parent.database.dumpData(id=self.config["s_id"], fields=self.status)
+			#self.parent.database.dumpData(id=self.config["s_id"], fields=self.status)
 
 
 
@@ -1214,6 +1285,7 @@ class RF(GenericSystem):
 		Thread.__init__(self)
 		self.parent = parent
 		self.config = config
+		self.name = self.config["s_id"]		
 
 		self.status = 	{
 								"rf1_power": 0,
@@ -1229,14 +1301,14 @@ class RF(GenericSystem):
 			try:
 				self.status["rf1_index"] = self._getDeviceIndex(self.config["s_rf1_serial"])
 				self.status["rf1_power"] = 1
-			except Exception as e:
+			except Exception:
 				self.status["rf1_index"] = 0
 				self.status["rf1_power"] = 0
 
 			try:
 				self.status["rf2_index"] = self._getDeviceIndex(self.config["s_rf2_serial"])
 				self.status["rf2_power"] = 1
-			except Exception as e:
+			except Exception:
 				self.status["rf2_index"] = 0
 				self.status["rf2_power"] = 0
 
@@ -1246,14 +1318,20 @@ class RF(GenericSystem):
 	def _getDeviceIndex(self, serial):
 		return RtlSdr.get_device_index_by_serial(serial)
 
-class LAN():
+
+class LAN(GenericSystem):
 
 	def __init__(self, parent, config):
+		Thread.__init__(self)
 		self.parent = parent
 		self.config = config
+		self.name = self.config["s_id"]
+
+		self.running = True
 
 		self.status = 	{
-							"power" : 0
+							"power" : 0,
+							"eth0" : ""
 						}
 
 		if self.config["b_on_startup"]:
@@ -1277,11 +1355,65 @@ class LAN():
 		except Exception as e:
 			return {"success": False, "message": str(e)}
 
-	def get_status(self):
-		return {"success": True, "status": self.status}
+	def toggle_power(self):
+		if self.status["power"]:
+			return self.set_power(False)
+		else:
+			return self.set_power(False)
 
-	def get_config(self):
-		return {"success": True, "config": self.config}
+
+
+	def run(self):
+		while self.running:
+			try:
+				eth0_if = netifaces.ifaddresses("eth0")
+				if 2 in eth0_if:
+					self.status["eth0"] = eth0_if[2][0]["addr"]
+				else:
+					self.status["eth0"] = "NO LINK"
+			except Exception as e:
+				print(str(e))
+				self.status["eth0"] = "NOT AVLBL"
+			
+			time.sleep(self.config["i_polling_period"])
+
+
+class WLAN(GenericSystem):
+
+	def __init__(self, parent, config):
+		Thread.__init__(self)
+		self.parent = parent
+		self.config = config
+		self.name = self.config["s_id"]		
+
+		self.running = True
+
+		self.status = 	{
+							"power" : 0,
+							"wlan0" : "",
+							"ssid" : ""
+						}
+
+		if self.config["b_on_startup"]:
+			self.set_power(True)
+		else:
+			self.set_power(False)
+
+	def set_power(self, power):
+		try:
+			if power:
+				subprocess.run(["sudo rfkill unblock wifi"], shell=True)
+				self.status["power"] = 1
+				return {"success": True, "status": self.status}
+			else:
+				subprocess.run(["sudo rfkill block wifi"], shell=True)
+				self.status["power"] = 0
+				return {"success": True, "status": self.status}
+			self.parent.database.dumpData(id=self.config["s_id"], fields=self.status)
+
+		except Exception as e:
+			return {"success": False, "message": str(e)}
+
 
 	def toggle_power(self):
 		if self.status["power"]:
@@ -1289,48 +1421,32 @@ class LAN():
 		else:
 			return self.set_power(False)
 
-	def set_config(self, key, value):
-		if key == "s_id":
-			return {"success": False, "message": "Modification of s_id is not allowed"}
-		else:
-			if key in self.config:
-				try:
-					type_tag = key[:2]
-					if type_tag == "s_":
-						new_value = value
-						self.config[key] = new_value
-						return {"success": True, "config": self.config}
-					elif type_tag == "f_":
-						new_value = float(value)
-						self.config[key] = new_value
-						return {"success": True, "config": self.config}
-					elif type_tag == "b_":
-						if value.lower() in ["true", "True", "1", "yes", "false", "False", "0", "no"]:
-							new_value = self.parent.str2bool(value.lower())
-							self.config[key] = new_value
-							return {"success": True, "config": self.config}
-						else:
-							return {"success": False, "message": "Value {} not valid boolean".format(value)}
-					elif type_tag == "i_":
-						new_value = int(value)
-						self.config[key] = new_value
-						return {"success": True, "config": self.config}
-					elif type_tag == "l_":
-						new_value = json.loads(value)
-						self.config[key] = new_value
-						return {"success": True, "config": self.config}
+	def run(self):
+		while self.running:
+			try:
+				wlan0_if = netifaces.ifaddresses("wlan0")
+				if 2 in wlan0_if:
+					self.status["wlan0"] = wlan0_if[2][0]["addr"]
+					ssid_output = subprocess.check_output(['iwgetid']).decode('utf-8')
+					self.status["ssid"] = ssid_output.split('"')[1]
+				else:
+					self.status["wlan0"] = "NO LINK"
+					self.status["ssid"] = ""
+			except Exception as e:
+				self.status["wlan0"] = "NOT AVLBL"
+				self.status["ssid"] = ""
+				print(str(e))
+			
+			time.sleep(self.config["i_polling_period"])
 
-				except Exception as e:
-					return {"success": False, "message": "Exception occurred: {}".format(str(e))}
 
-			else:
-				return {"success": False, "message": "Key {} not present in target configuration dict".format(key)}
 
 class USB():
 
 	def __init__(self, parent, config):
 		self.parent = parent
 		self.config = config
+		self.name = self.config["s_id"]		
 
 		self.status = 	{
 							"power" : 0
@@ -1346,6 +1462,8 @@ class USB():
 			if power:
 				subprocess.run(["sudo uhubctl -l 1-1 -p 2 -a 1"], shell=True)
 				self.status["power"] = 1
+				time.sleep(0.5)
+				subprocess.run(["rtl_eeprom -d 0 -r temp; rtl_eeprom -d 1 -r temp"], shell=True)
 				return {"success": True, "status": self.status}
 			else:
 				subprocess.run(["sudo uhubctl -l 1-1 -p 2 -a 0"], shell=True)
@@ -1368,52 +1486,16 @@ class USB():
 		else:
 			return self.set_power(False)
 
-	def set_config(self, key, value):
-		if key == "s_id":
-			return {"success": False, "message": "Modification of s_id is not allowed"}
-		else:
-			if key in self.config:
-				try:
-					type_tag = key[:2]
-					if type_tag == "s_":
-						new_value = value
-						self.config[key] = new_value
-						return {"success": True, "config": self.config}
-					elif type_tag == "f_":
-						new_value = float(value)
-						self.config[key] = new_value
-						return {"success": True, "config": self.config}
-					elif type_tag == "b_":
-						if value.lower() in ["true", "True", "1", "yes", "false", "False", "0", "no"]:
-							new_value = self.parent.str2bool(value.lower())
-							self.config[key] = new_value
-							return {"success": True, "config": self.config}
-						else:
-							return {"success": False, "message": "Value {} not valid boolean".format(value)}
-					elif type_tag == "i_":
-						new_value = int(value)
-						self.config[key] = new_value
-						return {"success": True, "config": self.config}
-					elif type_tag == "l_":
-						new_value = json.loads(value)
-						self.config[key] = new_value
-						return {"success": True, "config": self.config}
-
-				except Exception as e:
-					return {"success": False, "message": "Exception occurred: {}".format(str(e))}
-
-			else:
-				return {"success": False, "message": "Key {} not present in target configuration dict".format(key)}
-
 
 class Audio():
 
 	def __init__(self, parent, config):
 		self.parent = parent
 		self.config = config
+		self.name = self.config["s_id"]		
 
 		GPIO.setup(self.config["i_control_pin"], GPIO.OUT)
-		self.mixer = alsaaudio.Mixer(self.config["s_mixer_name"])
+		self.mixer = alsaaudio.Mixer(control="Headphone", id=0, cardindex=0, device="default")
 
 		self.status = 	{
 							"power" : 0,
@@ -1427,6 +1509,8 @@ class Audio():
 			self.set_power(True)
 		else:
 			self.set_power(False)
+
+		self.set_volume(self.config["i_startup_volume"])
 
 		self.running = True
 
@@ -1516,7 +1600,7 @@ class Audio():
 						return {"success": True, "config": self.config}
 					elif type_tag == "b_":
 						if value.lower() in ["true", "True", "1", "yes", "false", "False", "0", "no"]:
-							new_value = self.parent.str2bool(value.lower())
+							new_value = int(self.parent.str2bool(value.lower()))
 							self.config[key] = new_value
 							return {"success": True, "config": self.config}
 						else:
@@ -1536,54 +1620,6 @@ class Audio():
 			else:
 				return {"success": False, "message": "Key {} not present in target configuration dict".format(key)}
 
-class Network(GenericSystem):
-
-	def __init__(self, parent, config):
-		Thread.__init__(self)
-		self.parent = parent
-		self.config = config
-
-		self.status = 		{
-								"eth0" : "",
-								"wlan0" : "",
-								"wlan1" : ""
-							}
-
-		self.running = True
-
-	def run(self):
-		while self.running:
-			try:
-				eth0_if = netifaces.ifaddresses("eth0")
-				if 2 in eth0_if:
-					self.status["eth0"] = eth0_if[2][0]["addr"]
-				else:
-					self.status["eth0"] = "NO LINK"
-			except Exception as e:
-				print(str(e))
-				self.status["eth0"] = "NOT AVLBL"
-
-			try:
-				wlan0_if = netifaces.ifaddresses("wlan0")
-				if 2 in wlan0_if:
-					self.status["wlan0"] = wlan0_if[2][0]["addr"]
-				else:
-					self.status["wlan0"] = "NO LINK"
-			except Exception as e:
-				self.status["wlan0"] = "NOT AVLBL"
-
-			try:
-				wlan1_if = netifaces.ifaddresses("wlan1")
-				if 2 in wlan1_if:
-					self.status["wlan1"] = wlan1_if[2][0]["addr"]
-				else:
-					self.status["wlan1"] = "NO LINK"
-			except Exception as e:
-				self.status["wlan1"] = "NOT AVLBL"
-
-			self.parent.database.dumpData(id=self.config["s_id"], fields=self.status)
-			time.sleep(self.config["i_polling_period"])
-
 
 class Clock(GenericSystem):
 
@@ -1591,6 +1627,7 @@ class Clock(GenericSystem):
 		Thread.__init__(self)
 		self.parent = parent
 		self.config = config
+		self.name = self.config["s_id"]		
 
 		self.status = 	{
 							"time_utc": ""
@@ -1610,6 +1647,9 @@ class Display(GenericSystem):
 		Thread.__init__(self)
 		self.parent = parent
 		self.config = config
+		self.name = self.config["s_id"]		
+
+		logging.info("Display init")
 
 		self.I2C_BUS = board.I2C()
 
@@ -1702,7 +1742,7 @@ class Display(GenericSystem):
 
 
 	def screenshot(self):
-		command = "export DISPLAY=:0; scrot -e 'mv $f /home/pi/Pictures/screenshots/; echo $f'"
+		command = "scrot -e 'mv $f /home/pi/Pictures/screenshots/; echo $f'"
 		process = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True)
 		file = process.communicate()[0].strip()
 
@@ -1728,6 +1768,7 @@ class GPS(GenericSystem):
 		Thread.__init__(self)
 		self.parent = parent
 		self.config = config
+		self.name = self.config["s_id"]
 
 		self.status = {
 							"power" : 0,
@@ -1773,7 +1814,7 @@ class GPS(GenericSystem):
 		else:
 			if self.status["power"]:
 				self.connected = False
-				subprocess.run(["../scripts/disable_gps.sh"], shell=True) #Enable GPSD and wake GPS
+				subprocess.run(["../scripts/disable_gps.sh"], shell=True) #Disable GPS
 				self.status["power"] = int(self.connected)
 				self.status["mode"] = 0
 				self.status["sats_visible"] = 0
@@ -1807,8 +1848,8 @@ class GPS(GenericSystem):
 		lower = 'abcdefghijklmnopqrstuvwx'
 		adj_lat = dec_lat + 90.0
 		adj_lon = dec_lon + 180.0
-		grid_lat_sq = upper[int(adj_lat/10)];
-		grid_lon_sq = upper[int(adj_lon/20)];
+		grid_lat_sq = upper[int(adj_lat/10)]
+		grid_lon_sq = upper[int(adj_lon/20)]
 		grid_lat_field = str(int(adj_lat%10))
 		grid_lon_field = str(int((adj_lon/2)%10))
 		adj_lat_remainder = (adj_lat - int(adj_lat)) * 60
@@ -1920,21 +1961,31 @@ class Database():
 	def __init__(self, parent, config):
 		self.parent = parent
 		self.config = config
+		self.name = self.config["s_id"]		
 
 		self.status = 	{
 							"active" : 1
 						}
 
+
 		self.dbclient = InfluxDBClient(host=self.config["s_db_host"], port=self.config["i_db_port"], username=self.config["s_db_username"], password=self.config["s_db_password"], database=self.config["s_db_name"])
 
-	def dumpData(self, id, fields):
-		json_body = [{
-						"measurement": id,
-						"time": datetime.datetime.utcnow(),
-						"fields": fields
-					}]
 
-		self.dbclient.write_points(json_body)
+
+
+
+	def dumpData(self, id, fields):
+		try:
+			json_body = [{
+							"measurement": id,
+							"time": datetime.datetime.utcnow(),
+							"fields": fields
+						}]
+
+			self.dbclient.write_points(json_body)
+		except Exception as e:
+			print("Exception when writing data to database:" + str(e))
+
 
 
 	def get_status(self):
@@ -1961,7 +2012,7 @@ class Database():
 						return {"success": True, "config": self.config}
 					elif type_tag == "b_":
 						if value.lower() in ["true", "True", "1", "yes", "false", "False", "0", "no"]:
-							new_value = self.parent.str2bool(value.lower())
+							new_value = int(self.parent.str2bool(value.lower()))
 							self.config[key] = new_value
 							return {"success": True, "config": self.config}
 						else:
@@ -1980,3 +2031,91 @@ class Database():
 
 			else:
 				return {"success": False, "message": "Key {} not present in target configuration dict".format(key)}
+
+
+
+class Bluetooth(GenericSystem):
+
+	def __init__(self, parent, config):
+		Thread.__init__(self)
+		self.parent = parent
+		self.config = config
+		self.name = self.config["s_id"]		
+
+		self.running = False
+		self.alive = True
+
+		self.status = 	{
+							"power" : 0,
+							"mac" : "",
+							"conn" : "",
+							"cmds" : 0
+						}
+
+		self.socket = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
+		self.size = 1024
+
+		self.socket.bind((self.config["s_bt_mac"], self.config["i_socket_port"]))
+		self.socket.listen(1)
+
+		if self.config["b_on_startup"]:
+			self.set_power(True)
+		else:
+			self.set_power(False)
+
+	def set_power(self, power):
+		try:
+			if power:
+				subprocess.run(["sudo systemctl start rfcomm; rfkill unblock bluetooth"], shell=True)
+				
+				self.status["power"] = 1
+				self.running = True
+
+				return {"success": True, "status": self.status}
+
+			else:
+				self.running = False
+				subprocess.run(["sudo systemctl stop rfcomm; rfkill block bluetooth"], shell=True)
+				self.status["power"] = 0
+
+				return {"success": True, "status": self.status}
+
+
+		except Exception as e:
+			return {"success": False, "message": str(e)}
+
+	def toggle_power(self):
+		if self.status["power"]:
+			return self.set_power(False)
+		else:
+			return self.set_power(False)
+
+	def run(self):
+		while self.alive:
+			while self.running:
+				try:
+					client, address = self.socket.accept()
+					#print("Incoming connection from {CLI}".format(CLI=address))
+					self.status["conn"] = address[0]
+					while True:
+						data = client.recv(self.size).decode('utf-8')
+						if data:
+							print("Received data: " + data)
+							self.status["cmds"] += 1
+
+
+				except Exception as e:
+					#print("Client disconnected with error:{ERR}".format(ERR=e))
+					client.close()
+					self.status["conn"] = ""
+					time.sleep(1)
+			time.sleep(1) #Idle at 1 Hz if not active
+
+
+	def _shutdown_thread(self):
+		self.socket.close()		
+		self.running = False
+		self.alive = False
+
+
+
