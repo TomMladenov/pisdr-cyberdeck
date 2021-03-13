@@ -18,12 +18,30 @@ import logging
 import time
 import inspect
 
+tags_metadata = [
+    {
+        "name": "common",
+        "description": "Subsystem common actions",
+    },
+    {
+        "name": "audio",
+        "description": "Audio functions",
+    },
+    {
+        "name": "obc",
+        "description": "On-board computer (OBC) functions",
+    },
+    {
+        "name": "display",
+        "description": "Display functions",
+    }			
+]
 
 #Load server
 server = Server()
 
 #Load API
-api = FastAPI()
+api = FastAPI(openapi_tags=tags_metadata)
 
 def execute_function_subsystem(**kwargs):
 	#print("Server subsystem function invocation: {}.{}({})".format(kwargs["system"], kwargs["function_name"], kwargs["args"]))
@@ -65,35 +83,35 @@ def get_configstatus():
 	return server.get_configstatus()
 
 
-@api.get("/systems/{system}/config")
+@api.get("/systems/{system}/config", tags=["common"])
 def get_config(system: str):
 	return execute_function_subsystem(system=system, function_name=inspect.stack()[0][3], args=None)
 
-@api.put("/systems/{system}/config")
+@api.put("/systems/{system}/config", tags=["common"])
 def set_config(system: str, key: str, value: str):
 	return execute_function_subsystem(system=system, function_name=inspect.stack()[0][3], args=[key, value])
 
-@api.get("/systems/{system}/status")
+@api.get("/systems/{system}/status", tags=["common"])
 def get_status(system: str):
 	return execute_function_subsystem(system=system, function_name=inspect.stack()[0][3], args=None)
 
-@api.get("/systems/{system}/configstatus")
+@api.get("/systems/{system}/configstatus", tags=["common"])
 def get_configstatus(system: str):
 	return execute_function_subsystem(system=system, function_name=inspect.stack()[0][3], args=None)
 
-@api.put("/systems/{system}/power")
+@api.put("/systems/{system}/power", tags=["common"])
 def set_power(system: str, power: bool):
 	return execute_function_subsystem(system=system, function_name=inspect.stack()[0][3], args=[power])
 
-@api.put("/systems/{system}/power/toggle")
+@api.put("/systems/{system}/power/toggle", tags=["common"])
 def toggle_power(system: str):
 	return execute_function_subsystem(system=system, function_name=inspect.stack()[0][3], args=None)
 
-@api.put("/systems/{system}/start_process")
+@api.put("/systems/{system}/start_process", tags=["common"])
 def start_process(system: str):
 	return execute_function_subsystem(system=system, function_name=inspect.stack()[0][3], args=None)
 
-@api.put("/systems/{system}/stop_process")
+@api.put("/systems/{system}/stop_process", tags=["common"])
 def stop_process(system: str):
 	return execute_function_subsystem(system=system, function_name=inspect.stack()[0][3], args=None)
 
@@ -101,51 +119,51 @@ def stop_process(system: str):
 
 
 
-@api.put("/systems/obc/reboot")
+@api.put("/systems/obc/reboot", tags=["obc"])
 def reboot():
-		return execute_function_subsystem(system="obc", function_name=inspect.stack()[0][3], args=None)
+	return execute_function_subsystem(system="obc", function_name=inspect.stack()[0][3], args=None)
 
-@api.put("/systems/obc/shutdown")
+@api.put("/systems/obc/shutdown", tags=["obc"])
 def shutdown():
 	return execute_function_subsystem(system="obc", function_name=inspect.stack()[0][3], args=None)
 
 
 #-------------AUDIO-------------
-@api.put("/systems/audio/volume")
+@api.put("/systems/audio/volume", tags=["audio"])
 def set_volume(volume: int):
 	return execute_function_subsystem(system="audio", function_name=inspect.stack()[0][3], args=[volume])
 
-@api.put("/systems/audio/volume/increment")
+@api.put("/systems/audio/volume/increment", tags=["audio"])
 def increment_volume():
 	return execute_function_subsystem(system="audio", function_name=inspect.stack()[0][3], args=None)
 
-@api.put("/systems/audio/volume/decrement")
+@api.put("/systems/audio/volume/decrement", tags=["audio"])
 def decrement_volume():
 	return execute_function_subsystem(system="audio", function_name=inspect.stack()[0][3], args=None)
 
-@api.put("/systems/audio/mute")
+@api.put("/systems/audio/mute", tags=["audio"])
 def set_mute(muted: bool):
 	return execute_function_subsystem(system="audio", function_name=inspect.stack()[0][3], args=[muted])
 
-@api.put("/systems/audio/mute/toggle")
+@api.put("/systems/audio/mute/toggle", tags=["audio"])
 def toggle_mute():
 	return execute_function_subsystem(system="audio", function_name=inspect.stack()[0][3], args=None)
 
-@api.put("/systems/audio/test")
+@api.put("/systems/audio/test", tags=["audio"])
 def set_test(test: bool):
 	return execute_function_subsystem(system="audio", function_name=inspect.stack()[0][3], args=[test])
 
 
 #-------------DISPLAY-------------
-@api.put("/systems/display/brightness")
+@api.put("/systems/display/brightness", tags=["display"])
 def set_brightness(brightness: int):
 	return execute_function_subsystem(system="display", function_name=inspect.stack()[0][3], args=[brightness])
 
-@api.put("/systems/display/brightness/increment")
+@api.put("/systems/display/brightness/increment", tags=["display"])
 def increment_brightness():
 	return execute_function_subsystem(system="display", function_name=inspect.stack()[0][3], args=None)
 
-@api.put("/systems/display/brightness/decrement")
+@api.put("/systems/display/brightness/decrement", tags=["display"])
 def decrement_brightness():
 	return execute_function_subsystem(system="display", function_name=inspect.stack()[0][3], args=None)
 
@@ -182,9 +200,18 @@ def custom_openapi():
 
 if __name__ == '__main__':
 
+	logging_format = "%(asctime)s %(levelname)-8s %(threadName)-4s %(message)s (L%(lineno)d)"
+
+	for handler in logging.root.handlers[:]:
+		logging.root.removeHandler(handler)
+
+	logging.basicConfig(level=logging.DEBUG, format=logging_format)
+	logging.Formatter.converter = time.gmtime
+
+
 	log_config = uvicorn.config.LOGGING_CONFIG
-	log_config["formatters"]["access"]["fmt"] = "%(asctime)s - %(levelname)s %(module)s - %(message)s"
-	log_config["formatters"]["default"]["fmt"] = "%(asctime)s - %(levelname)s - %(module)s - %(message)s"
+	log_config["formatters"]["access"]["fmt"] = logging_format
+	log_config["formatters"]["default"]["fmt"] = logging_format
 
 	api.openapi = custom_openapi
 
