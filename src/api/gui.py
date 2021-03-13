@@ -109,14 +109,14 @@ class DeviceWidget(QWidget):
 			setattr(self, configButton, QtWidgets.QToolButton())
 			self.configbutton = getattr(self, configButton)
 			self.configbutton.setText("Config")
-			self.configbutton.setStyleSheet("border: 1px solid black; border-radius: 25px; background-color: rgb(186, 186, 186); font: 10pt \"Noto Sans\"; min-height: 35 px")
+			self.configbutton.setStyleSheet("border: 1px solid black; border-radius: 25px; background-color: rgb(186, 186, 186); font: 10pt \"Noto Sans\"; min-height: 25 px")
 			self.configbutton.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
 
 			powerButton = "{}_powerbutton_button".format(self.device["id"])
 			setattr(self, powerButton, QtWidgets.QToolButton())
 			self.powerbutton = getattr(self, powerButton)
 			self.powerbutton.setText("START")
-			self.powerbutton.setStyleSheet("border: 1px solid black; border-radius: 25px; background-color: rgb(186, 186, 186); font: 10pt \"Noto Sans\"; min-height: 35 px")
+			self.powerbutton.setStyleSheet("border: 1px solid black; border-radius: 25px; background-color: rgb(186, 186, 186); font: 10pt \"Noto Sans\"; min-height: 25 px")
 			self.powerbutton.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
 
 			self.buttonsWidgetLayout.addWidget(self.configbutton)
@@ -141,7 +141,7 @@ class DeviceWidget(QWidget):
 			setattr(self, configButton, QtWidgets.QToolButton())
 			self.configbutton = getattr(self, configButton)
 			self.configbutton.setText("Config")
-			self.configbutton.setStyleSheet("border: 1px solid black; border-radius: 25px; background-color: rgb(186, 186, 186); font: 10pt \"Noto Sans\"; min-height: 35 px")
+			self.configbutton.setStyleSheet("border: 1px solid black; border-radius: 25px; background-color: rgb(186, 186, 186); font: 10pt \"Noto Sans\"; min-height: 25 px")
 			self.configbutton.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
 
 			self.buttonsWidgetLayout.addWidget(self.configbutton)
@@ -182,9 +182,10 @@ class DeviceWidget(QWidget):
 				elif "power" in key:
 					if value:
 						label.setStyleSheet(GREEN)
-
-						if key == "rf1_power" or key == "rf2_power" or key == "j1a_power" or key == "j1b_power":
+						if key == "rf1_power" or key == "rf2_power":
 							label.setText("{} ON".format(key.split("_")[0].upper()))
+						elif key == "j1a_power" or key == "j1b_power":
+							label.setText("{} ON {}".format(key.split("_")[0].upper(), "(5V)" if key == "j1a_power" else "(9-36V)"))
 						else:
 							label.setText("ON")
 
@@ -192,8 +193,10 @@ class DeviceWidget(QWidget):
 							self.powerbutton.setText("OFF")
 					else:
 						label.setStyleSheet(RED)
-						if key == "rf1_power" or key == "rf2_power" or key == "j1a_power" or key == "j1b_power":
+						if key == "rf1_power" or key == "rf2_power":
 							label.setText("{} OFF".format(key.split("_")[0].upper()))
+						elif key == "j1a_power" or key == "j1b_power":
+							label.setText("{} OFF {}".format(key.split("_")[0].upper(), "(5V)" if key == "j1a_power" else "(9-36V)"))
 						else:
 							label.setText("OFF")
 
@@ -215,15 +218,24 @@ class DeviceWidget(QWidget):
 						label.setStyleSheet("")
 
 					label.setText(value)
+
 				elif key == "t_left":
 					label.setText("{}={} hrs".format(key, round(value, 1)))
+
 				elif key == "eth0" or key == "wlan0" or key == "wlan1":
 					if not value == "NO LINK" and not value == "NOT AVLBL":
 						label.setStyleSheet(GREEN)
 					else:
 						label.setStyleSheet("")
+					
 
-					label.setText("{}: {}".format(key, value))
+					label.setText("{}".format(value))
+					label.setAlignment(QtCore.Qt.AlignCenter)
+
+				elif key == "ssid" or key == "conn":	
+					label.setText("{}".format(value))
+					label.setAlignment(QtCore.Qt.AlignCenter)
+
 				elif key == "mode":
 					label.setAlignment(QtCore.Qt.AlignCenter)
 					if value == 3:
@@ -442,6 +454,9 @@ class Statusbar(QDialog):
 		self.move(0, 450)
 		self.show()
 
+	def popup(self):
+		self.show()
+		self.activateWindow()
 
 class Barmenu(QWidget):
 
@@ -552,6 +567,8 @@ class ConfigWindow(QWidget):
 		vheader.setVisible(False)
 
 		hheader = self.configtable.horizontalHeader()
+		scrollbar = self.configtable.verticalScrollBar()
+		scrollbar.setStyleSheet("QScrollBar:vertical { width: 30px; }")
 		self.configtable.setHorizontalHeaderLabels(["key", "value"])
 
 		self.configtable.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.AdjustToContents)
@@ -741,7 +758,7 @@ class Main(QMainWindow):
 		self.setFixedSize(self.size())
 		self.setWindowFlags(Qt.FramelessWindowHint)
 		self.statusBar().hide()
-		self.move(732, 0)
+		self.move(732, -5)
 
 		#---------WINDOWS-----------
 		self.statusbar = Statusbar()
@@ -763,6 +780,7 @@ class Main(QMainWindow):
 		self.gqrx_start_button.pressed.connect(lambda: self.cyberdeck.start_process("gqrx"))
 
 		self.menu_button.pressed.connect(self.menuwindow.popup)
+		self.menu_button.pressed.connect(self.statusbar.popup)
 		self.display_screenshot_button.pressed.connect(self.takeScreenshot)
 		self.display_toggle_button.pressed.connect(lambda: self.cyberdeck.toggle_power("display"))
 
@@ -771,6 +789,8 @@ class Main(QMainWindow):
 		self.initWidgets()
 
 		self.menuwindow.exit_button.pressed.connect(self.exitApplication)
+		self.menuwindow.shutdown_button.pressed.connect(lambda: self.cyberdeck.shutdown())
+		self.menuwindow.reboot_button.pressed.connect(lambda: self.cyberdeck.reboot())
 
 
 		#Main GUI refresh timer task
@@ -852,7 +872,7 @@ class Main(QMainWindow):
 			#self.deviceWidgets = [DeviceWidget(self, d) for d in configstatus if d["s_id"]]
 
 			rows = 2
-			columns = 5
+			columns = 6
 			mylist = [[0 for x in range(columns)] for x in range(rows)]
 			k = 0
 			for i in range(rows):
@@ -976,6 +996,14 @@ class Main(QMainWindow):
 			self.statusbar.rf_rf2power_label.setStyleSheet(GREEN)
 		else:
 			self.statusbar.rf_rf2power_label.setStyleSheet(RED)
+
+		if [device["status"]["power"] for device in current_status if device["id"] == "lan"][0]:
+			self.statusbar.lan_power_label.setStyleSheet(GREEN)
+		else:
+			self.statusbar.lan_power_label.setStyleSheet(RED)
+
+
+
 
 
 		if [application["status"]["running"] for application in current_status if application["id"] == "navigation"][0]:

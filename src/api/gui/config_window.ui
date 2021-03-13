@@ -55,8 +55,17 @@
      <height>216</height>
     </rect>
    </property>
+   <property name="styleSheet">
+    <string notr="true">QScrollBar:vertical { width: 100px; }</string>
+   </property>
    <property name="sizeAdjustPolicy">
     <enum>QAbstractScrollArea::AdjustToContents</enum>
+   </property>
+   <property name="verticalScrollMode">
+    <enum>QAbstractItemView::ScrollPerPixel</enum>
+   </property>
+   <property name="horizontalScrollMode">
+    <enum>QAbstractItemView::ScrollPerPixel</enum>
    </property>
   </widget>
  </widget>
