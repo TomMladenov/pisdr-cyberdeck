@@ -4,11 +4,14 @@
 __author__ = 'Tom Mladenov'
 
 
-import requests
-import zmq
-from threading import Thread
 import json
 import pickle
+from threading import Thread
+import sys
+
+import requests
+import zmq
+
 
 class RemoteCyberdeck(Thread):
 
@@ -165,19 +168,19 @@ class RemoteCyberdeck(Thread):
 				self.connected = False
 
 
-"""
+
 if __name__ == '__main__':
 
-	cyberdeck = RemoteCyberdeck("192.168.0.163", 5000, 5001)
+	cyberdeck = RemoteCyberdeck("172.16.18.185", 5000, 5001)
 	print("Issuing remote handshake...")
 	response = cyberdeck.handshake()
-	print(reponse)
+	print(response)
 
-	if resonse["success"]:
-		gps_status = cyberdeck.get_config(system="gps")
-		print(gps_pstatus)
+	if response["success"]:
+		gps_status = cyberdeck.get_status(system="gps")
+		print(gps_status)
 
 	cyberdeck.stop()
 	sys.exit("Done!")
 
-"""
+
